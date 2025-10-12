@@ -688,8 +688,8 @@ struct video_source *libcamera_source_create(const char *devname)
 	}
 
 	src->config = src->camera->generateConfiguration(
-		{StreamRole::VideoRecording, StreamRole::StillCapture});
-	
+		{StreamRole::VideoRecording});
+	/*
 	if (src->config) {
 		StreamConfiguration &stillConfig = src->config->at(1);
 		stillConfig.pixelFormat = PixelFormat(V4L2_PIX_FMT_SRGGB12);
@@ -704,7 +704,7 @@ struct video_source *libcamera_source_create(const char *devname)
 			src->still.stream = stillConfig.stream();
 		}
 	}
-	
+	*/
 	if (!src->config) {
 		src->config = src->camera->generateConfiguration(
 			{StreamRole::VideoRecording});
