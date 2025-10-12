@@ -16,4 +16,3 @@ uvcgadget_public_headers = files([
 install_headers(uvcgadget_public_headers,
                 subdir : 'uvcgadget')
 
-includes = include_directories('.')
