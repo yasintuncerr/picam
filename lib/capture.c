@@ -17,7 +17,7 @@
 #include "still-source.h"
 
 // libcamera C++ interface
-extern struct still_source *libcamera_get_still_source(struct still_source *s);
+extern struct still_source *libcamera_get_still_source(struct video_source *s);
 extern void libcamera_still_source_set_callback(struct still_source *ssrc,
                                                 void (*cb)(void *, struct still_buffer *),
                                                 void *data);
@@ -231,7 +231,7 @@ static void accept_connection(void *priv) {
     close(client_fd);
 }
 
-struct http_server *http_capture_new(int port, struct video_source *vid_src, 
+struct http_server *http_capture_new(int port, struct video_source *video_src, 
                                      struct events *events) {
     if (!events) {
         fprintf(stderr, "events cannot be NULL\n");
@@ -245,7 +245,7 @@ struct http_server *http_capture_new(int port, struct video_source *vid_src,
     }
 
     server->events = events;
-    server->still_src = vid_src ? libcamera_get_still_source(vid_src) : NULL;
+    server->still_src = video_src ? libcamera_get_still_source(video_src) : NULL;
 
     for (int i = 0; i < MAX_CLIENTS; ++i) {
         server->clients[i].fd = -1;
