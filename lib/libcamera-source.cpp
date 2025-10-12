@@ -600,7 +600,7 @@ static const struct video_source_ops libcamera_source_video_ops = {
 	.stream_off 	= libcamera_source_stream_off,
 	.queue_buffer 	= libcamera_source_video_queue_buffer,
 	.fill_buffer 	= NULL,
-}
+};
 
 static int still_source_capture_wrapper(struct still_source *ssrc) {
 	return container_of(
@@ -608,7 +608,7 @@ static int still_source_capture_wrapper(struct still_source *ssrc) {
 		libcamera_source,
 		still_src
 	)->captureStill();
-}
+};
 
 static const struct still_source_ops libcamera_source_still_ops = {
 	.capture = still_source_capture_wrapper,
@@ -617,10 +617,7 @@ static const struct still_source_ops libcamera_source_still_ops = {
 	.alloc_buffer = nullptr,
 	.free_buffer = nullptr,
 	.get_buffer = nullptr,
-}
-
-
-
+};
 
 struct video_source *libcamera_source_create(const char *devname)
 {
@@ -638,75 +635,86 @@ struct video_source *libcamera_source_create(const char *devname)
 	src->video_src.type = VIDEO_SOURCE_DMABUF;
 	src->still_src.ops = &libcamera_source_still_ops;
 
-
 	src->cm = std::make_unique<CameraManager>();
-	src->cm->start();
+	int ret = src->cm->start();
 
-	if(src->cm->cameras().empty()) {
+	if (ret < 0 || src->cm->cameras().empty()) {
 		delete src;
 		return nullptr;
 	}
 
 	if (std::isdigit(devname[0])) {
-		
 		unsigned long index = std::atoi(devname);
 
 		if (index >= src->cm->cameras().size()) {
 			std::cerr << "Camera index out of range" << std::endl;
 			delete src;
 			return nullptr;
-		} 
-		else {
-			
-			src->camera = src->cm->cameras()[index];
-			if (!src->camera){
-				delete src;
-				return nullptr;
-			}
 		}
-		
-		if (!src->camera->acquire()) {
+
+		src->camera = src->cm->cameras()[index];
+		if (!src->camera) {
+			std::cerr << "Failed to get camera at index " << index << std::endl;
 			delete src;
 			return nullptr;
 		}
+	} else {
+		src->camera = src->cm->get(devname);
+		if (!src->camera) {
+			std::cerr << "Camera '" << devname << "' not found" << std::endl;
+			std::cerr << "Available cameras:" << std::endl;
+			for (const auto &cam : src->cm->cameras()) {
+				std::cerr << "  - " << cam->id() << std::endl;
+			}
+			delete src;
+			return nullptr;
+		}
+	}
 
+	ret = src->camera->acquire();
+	if (ret < 0) {
+		std::cerr << "Failed to acquire camera" << std::endl;
+		delete src;
+		return nullptr;
+	}
+
+	src->config = src->camera->generateConfiguration(
+		{StreamRole::VideoRecording, StreamRole::StillCapture});
+	
+	if (src->config) {
+		StreamConfiguration &stillConfig = src->config->at(1);
+		stillConfig.pixelFormat = PixelFormat(V4L2_PIX_FMT_SRGGB12);
+		stillConfig.size.width = 4056;
+		stillConfig.size.height = 3040;
+		stillConfig.bufferCount = 1;
+		
+		if (src->config->validate() == CameraConfiguration::Invalid) {
+			std::cout << "Dual stream config invalid, falling back to video only" << std::endl;
+			src->config = nullptr;
+		} else {
+			src->still.stream = stillConfig.stream();
+		}
+	}
+	
+	if (!src->config) {
 		src->config = src->camera->generateConfiguration(
-			{StreamRole::VideoRecording, StreamRole::StillCapture});
-		
-		if (src->config) {
-			StreamConfiguration &stillConfig = src->config->at(1);
-			stillConfig.pixelFormat = PixelFormat(V4L2_PIX_FMT_SRGGB12);
-			stillConfig.size.width = 4056;
-			stillConfig.size.height = 3040;
-			stillConfig.bufferCount = 1;
-			
-			if (src->config->validate() == CameraConfiguration::Invalid) {
-				src->config = nullptr;
-			}
-			else {
-				src->still.stream = stillConfig.stream();
-			}
+			{StreamRole::VideoRecording});
+		if (!src->config) {
+			std::cerr << "Failed to generate camera configuration" << std::endl;
+			src->camera->release();
+			delete src;
+			return nullptr;
 		}
-		
-		if(!src->config) {
-			src->config = src->camera->generateConfiguration(
-				{StreamRole::VideoRecording});
-			if(!src->config) {
-				src->camera->release();
-				delete src;
-				return nullptr;
-			}
-		}
-		}
+	}
 
-		src->camera->requestCompleted.connect(src, &libcamera_source::requestComplete);
+	src->camera->requestCompleted.connect(src, &libcamera_source::requestComplete);
 
-		const ControlInfoMap &infoMap = src->camera->controls();
-		if (infoMap.find(&controls::AfMode) != infoMap.end()) {
-			src->controls.set(controls::AfMode, controls::AfModeContinuous);
-		}
-    	return &src->video_src;
-		
+	const ControlInfoMap &infoMap = src->camera->controls();
+	if (infoMap.find(&controls::AfMode) != infoMap.end()) {
+		src->controls.set(controls::AfMode, controls::AfModeContinuous);
+	}
+
+	return &src->video_src;
 }
 
 void libcamera_source_init(struct video_source *s, struct events *events)
