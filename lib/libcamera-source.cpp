@@ -117,7 +117,7 @@ void libcamera_source::requestComplete(Request *request)
 		return;
 	}
 
-	Stream *request_stream = request->buffers().begin()->first;
+	const Stream *request_stream = request->buffers().begin()->first;
 
 	if(request_stream == video.stream) {
 		video.completed_requests.push(request);
@@ -172,6 +172,10 @@ int libcamera_source::captureStill()
     }
     return 0;
 }
+
+static void libcamera_source_video_process(libcamera_source *src);
+static void libcamera_source_still_process(libcamera_source *src);
+
 
 static void process_camera_events(void *d)
 {
@@ -487,7 +491,7 @@ static int libcamera_source_stream_on(struct video_source *s)
 
 	}
 
-	int ret = src->camera->start(&src->controls);
+	ret = src->camera->start(&src->controls);
 	if (ret < 0) {
 		std::cerr << "Failed to start camera: " << strerror(-ret) << std::endl;
 		return ret;
@@ -607,19 +611,16 @@ static const struct video_source_ops libcamera_source_video_ops = {
 };
 
 static int still_source_capture_wrapper(struct still_source *ssrc) {
-	return container_of(
-		ssrc,
-		libcamera_source,
-		still_src
-	)->captureStill();
-};
+	libcamera_source *src = container_of(ssrc, libcamera_source, still_src);
+	return src->captureStill();
+}
 
 static const struct still_source_ops libcamera_source_still_ops = {
-	.capture = still_source_capture_wrapper,
 	.destroy = nullptr,
 	.set_format = nullptr,
 	.alloc_buffer = nullptr,
 	.free_buffer = nullptr,
+	.capture = still_source_capture_wrapper,
 	.get_buffer = nullptr,
 };
 
