@@ -528,10 +528,11 @@ static int libcamera_source_stream_off(struct video_source *s)
 	if(!src || !src->camera)
 		return -EINVAL;
 
-	events_unwatch_fd(src->video_src.events, src->pfds[0], EVENT_READ);
 
 	src->camera->stop();
 
+	events_unwatch_fd(src->video_src.events, src->pfds[0], EVENT_READ);
+	
 	while(!src->video.completed_requests.empty()) {
 		src->video.completed_requests.pop();
 	}
@@ -694,7 +695,7 @@ struct video_source *libcamera_source_create(const char *devname)
 
 	src->config = src->camera->generateConfiguration(
 		{StreamRole::VideoRecording});
-	/*
+	
 	if (src->config) {
 		StreamConfiguration &stillConfig = src->config->at(1);
 		stillConfig.pixelFormat = PixelFormat(V4L2_PIX_FMT_SRGGB12);
@@ -709,7 +710,7 @@ struct video_source *libcamera_source_create(const char *devname)
 			src->still.stream = stillConfig.stream();
 		}
 	}
-	*/
+	
 	if (!src->config) {
 		src->config = src->camera->generateConfiguration(
 			{StreamRole::VideoRecording});
