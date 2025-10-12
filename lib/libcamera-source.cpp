@@ -515,6 +515,9 @@ static int libcamera_source_stream_on(struct video_source *s)
 		}
 	}
 
+	events_watch_fd(src->video_src.events, src->pfds[0], EVENT_READ,
+                    process_camera_events, src);
+
 	return 0;
 }
 
@@ -524,6 +527,8 @@ static int libcamera_source_stream_off(struct video_source *s)
 
 	if(!src || !src->camera)
 		return -EINVAL;
+
+	events_unwatch_fd(src->video_src.events, src->pfds[0], EVENT_READ);
 
 	src->camera->stop();
 
@@ -731,8 +736,6 @@ void libcamera_source_init(struct video_source *s, struct events *events)
 	struct libcamera_source *src = to_libcamera_source(s);
 
 	src->video_src.events = events;
-	events_watch_fd(events, src->pfds[0], EVENT_READ, 
-		process_camera_events, src);
 }
 
 extern "C" struct still_source *libcamera_get_still_source(struct video_source *s) {
