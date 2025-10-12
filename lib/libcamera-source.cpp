@@ -155,7 +155,6 @@ int libcamera_source::captureStill()
         return -ENOMEM;
     }
 
-	
 	FrameBuffer *buffer_to_use = still.mapped_buffers_.begin()->first;
 
     int ret = request->addBuffer(still.stream, buffer_to_use);
@@ -165,8 +164,12 @@ int libcamera_source::captureStill()
 
 	still.capture_in_progress = true;
 
-    ret = camera->queueRequest(request.release());
+    // DÜZELTME: Bellek sızıntısını önlemek için request'i bir işaretçiye alıp
+    // başarısızlık durumunda silin.
+    Request *raw_req = request.release();
+    ret = camera->queueRequest(raw_req);
     if (ret < 0) {
+        delete raw_req; // Bellek sızıntısını önle
         still.capture_in_progress = false;
         return ret;
     }
@@ -371,14 +374,14 @@ static int libcamera_source_video_export_buffers(struct video_source *s, struct 
 	struct libcamera_source *src = to_libcamera_source(s);
 	const auto &buffers = src->video.allocator->buffers(src->video.stream);
 
-
 	struct video_buffer_set *exported_set = video_buffer_set_new(buffers.size());
 	if (!exported_set)
 		return -ENOMEM;
 
 	for (unsigned int i = 0; i < buffers.size(); i++) {
-		exported_set->buffers[i].index = buffers[i]->planes()[0].length;
-		exported_set->buffers[i].size = buffers[i]->planes()[0].fd.get();
+		// DÜZELTME: Boyut ve dmabuf doğru alanlara atanıyor.
+		exported_set->buffers[i].size = buffers[i]->planes()[0].length;
+		exported_set->buffers[i].dmabuf = buffers[i]->planes()[0].fd.get();
 	}
 
 	*bufs = exported_set;
