@@ -253,6 +253,7 @@ static void libcamera_source_still_process(libcamera_source *src)
 		src->still.capture_in_progress = false;
 		return;
 	}
+    libcamera::StreamConfiguration const &cfg = src->still.stream->configuration();
 
 	struct still_buffer buffer;
     buffer.mem = span_it->second.data();
@@ -261,6 +262,9 @@ static void libcamera_source_still_process(libcamera_source *src)
     buffer.timestamp.tv_sec = fb->metadata().timestamp / 1000000;
     buffer.timestamp.tv_usec = fb->metadata().timestamp % 1000000;
     buffer.error = false;
+	buffer.width = cfg.size.width;
+	buffer.height = cfg.size.height;
+	buffer.pixelformat = cfg.pixelFormat.fourcc();
 	
 	if(src->still.capture_ready_cb)
 		src->still.capture_ready_cb(src->still.capture_ready_data, &buffer);
