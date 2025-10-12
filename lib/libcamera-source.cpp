@@ -379,8 +379,14 @@ static int libcamera_source_video_export_buffers(struct video_source *s, struct 
 		return -ENOMEM;
 
 	for (unsigned int i = 0; i < buffers.size(); i++) {
-		// DÜZELTME: Boyut ve dmabuf doğru alanlara atanıyor.
-		exported_set->buffers[i].size = buffers[i]->planes()[0].length;
+		// DÜZELTME: Toplam buffer boyutunu hesapla
+		size_t total_size = 0;
+		for (const auto &plane : buffers[i]->planes()) {
+			total_size += plane.length;
+		}
+		
+		// Doğru alanlara ata
+		exported_set->buffers[i].size = total_size;
 		exported_set->buffers[i].dmabuf = buffers[i]->planes()[0].fd.get();
 	}
 
