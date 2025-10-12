@@ -20,6 +20,7 @@
 #include "test-source.h"
 #include "jpg-source.h"
 #include "slideshow-source.h"
+#include "capture.h"
 
 static void usage(const char *argv0)
 {
@@ -31,6 +32,7 @@ static void usage(const char *argv0)
 	fprintf(stderr, " -d device	V4L2 source device\n");
 	fprintf(stderr, " -i image	MJPEG image\n");
 	fprintf(stderr, " -s directory	directory of slideshow images\n");
+	fprintf(stderr, " -p port	HTTP capture server port (default: disabled)\n");
 	fprintf(stderr, " -h		Print this help screen and exit\n");
 	fprintf(stderr, "\n");
 	fprintf(stderr, " <uvc device>	UVC device instance specifier\n");
@@ -46,12 +48,19 @@ static void usage(const char *argv0)
 	fprintf(stderr, "  The parameter is optional, and if not provided the first UVC function on the first\n");
 	fprintf(stderr, "  gadget identified will be used.\n");
 	fprintf(stderr, "\n");
+	fprintf(stderr, "  HTTP Capture Server:\n");
+	fprintf(stderr, "  When -p port is specified, an HTTP server will be started on the given port.\n");
+	fprintf(stderr, "  Currently only libcamera sources support still image capture via HTTP.\n");
+	fprintf(stderr, "  Usage: curl http://<ip>:<port>/capture > image.raw\n");
+	fprintf(stderr, "\n");
 	fprintf(stderr, "Example usage:\n");
 	fprintf(stderr, "    %s uvc.1\n", argv0);
 	fprintf(stderr, "    %s g1/functions/uvc.1\n", argv0);
+	fprintf(stderr, "    %s -c 0 -p 8080 uvc.0  # libcamera with HTTP capture on port 8080\n", argv0);
 	fprintf(stderr, "\n");
 	fprintf(stderr, "    %s musb-hdrc.0.auto\n", argv0);
 }
+
 
 /* Necessary for and only used by signal handler. */
 static struct events *sigint_events;
@@ -71,15 +80,16 @@ int main(int argc, char *argv[])
 	char *cap_device = NULL;
 	char *img_path = NULL;
 	char *slideshow_dir = NULL;
-
+	int http_port = 0;
 	struct uvc_function_config *fc;
 	struct uvc_stream *stream = NULL;
 	struct video_source *src = NULL;
+	struct http_server *http_server = NULL;
 	struct events events;
 	int ret = 0;
 	int opt;
 
-	while ((opt = getopt(argc, argv, "c:d:i:s:k:h")) != -1) {
+	while ((opt = getopt(argc, argv, "c:d:i:s:p:h")) != -1) {
 		switch (opt) {
 #ifdef HAVE_LIBCAMERA
 		case 'c':
@@ -96,6 +106,14 @@ int main(int argc, char *argv[])
 
 		case 's':
 			slideshow_dir = optarg;
+			break;
+		case 'p':
+			http_port = atoi(optarg);
+			if (http_port <= 0 || http_port > 65535) {
+				fprintf(stderr, "Invalid port number '%s'\n", optarg);
+				fprintf(stderr, "Port must be between 1 and 65535\n");
+				return 1;
+			}
 			break;
 
 		case 'h':
@@ -160,6 +178,27 @@ int main(int argc, char *argv[])
 		libcamera_source_init(src, &events);
 #endif
 
+	if (http_port > 0) {
+#ifdef HAVE_LIBCAMERA
+		if (camera) {
+			printf("Starting HTTP capture server on port %d\n", http_port);
+			http_server = http_capture_new(http_port, src, &events);
+			if (!http_server) {
+				fprintf(stderr, "Failed to create HTTP capture server\n");
+				ret = 1;
+				goto done;
+			}
+			printf("HTTP capture server started successfully\n");
+			printf("Usage: curl http://<ip>:%d/capture > image.raw\n", http_port);
+		} else {
+			fprintf(stderr, "Warning: HTTP capture server is only supported with libcamera sources (-c option)\n");
+			fprintf(stderr, "Ignoring -p %d option\n", http_port);
+		}
+#else
+		fprintf(stderr, "Warning: HTTP capture server requires libcamera support\n");
+		fprintf(stderr, "This build was compiled without libcamera. Ignoring -p %d option\n", http_port);
+#endif
+	}
 	/* Create and initialise the stream. */
 	stream = uvc_stream_new(fc->video);
 	if (stream == NULL) {
@@ -176,6 +215,13 @@ int main(int argc, char *argv[])
 
 done:
 	/* Cleanup */
+	printf("\nShutting down...\n");
+	
+	if (http_server) {
+		printf("Stopping HTTP capture server\n");
+		http_capture_destroy(http_server);
+	}
+	
 	uvc_stream_delete(stream);
 	video_source_destroy(src);
 	events_cleanup(&events);
