@@ -268,7 +268,6 @@ static void libcamera_source_still_process(libcamera_source *src)
 	delete request;
 }
 
-
 static void libcamera_source_destroy(struct video_source *s)
 {
 	struct libcamera_source *src = to_libcamera_source(s);
@@ -280,44 +279,21 @@ static void libcamera_source_destroy(struct video_source *s)
 		src->camera->stop();
 	}
 	
+	if (src->pfds[0] != -1)  close(src->pfds[0]);
+	if (src->pfds[1] != -1)  close(src->pfds[1]);
+	
+	for (auto const [key, val] : src->video.mapped_buffers_) munmap(val.data(), val.size());
+	for (auto const [key, val] : src->still.mapped_buffers_) munmap(val.data(), val.size());
 
-	if (src->pfds[0] != -1) {
-		close(src->pfds[0]);
-	}
-	if (src->pfds[1] != -1) {
-		close(src->pfds[1]);
-	}
-
-
-	for (auto const [key, val] : src->video.mapped_buffers_) {
-		munmap(val.data(), val.size());
-	}
-
-	for (auto const [key, val] : src->still.mapped_buffers_) {
-		munmap(val.data(), val.size());
-	}
-
-
-	if(src->video.allocator) {
-		delete src->video.allocator;
-	}
-	if(src->still.allocator) {
-		delete src->still.allocator;
-	}
-	if(src->video.encoder) {
-		delete src->video.encoder;
-	}
+	if(src->video.allocator) delete src->video.allocator;
+	if(src->still.allocator) delete src->still.allocator;
+	
+	if(src->video.encoder) delete src->video.encoder;
+	
 
 	free(src->video.buffers.buffers);
-
-	if(src->camera) {
-		src->camera->release();
-	}
-
-	if (src->cm) {
-		src->cm->stop();
-	}
-
+	if(src->camera) src->camera->release();
+	if (src->cm) src->cm->stop();
 	delete src;
 }
 
@@ -370,4 +346,261 @@ static int libcamera_source_video_set_format(struct video_source *s,
 
 	return 0;
 }
+
+static int libcamera_source_video_set_frame_rate(struct video_source *s, unsigned int fps)
+{
+	struct libcamera_source *src = to_libcamera_source(s);
+
+	in64_t frame_time = 1000000 /fps;
+	
+	src->controls.set(controls::FrameDurationLimits,
+					Span<const int64_t, 2>({frame_time, frame_time}));
+	return 0;
+} 
+
+static int libcamera_source_video_export_buffers(struct video_source *s, struct video_buffer_set **bufs)
+{
+	struct libcamera_source *src = to_libcamera_source(s);
+	const auto &buffers = src->video.allocator->buffers(src->video.stream);
+
+
+	struct video_buffer_set *exported_set = video_buffer_set_new(buffers.size());
+	if (!exported_set)
+		return -ENOMEM;
+
+	for (unsigned int i = 0; i < buffers.size(); i++) {
+		exported_set->buffers[i].index = buffers[i]->planes()[0].length;
+		exported_set->buffers[i].dmabuf = buffers[i]->planes()[0].fd.get();
+	}
+
+	*bufs = exported_set;
+	return 0;
+}
+
+static int libcamera_source_video_import_buffers(struct video_source *s, 
+						struct video_buffer_set *bufs)
+{
+	struct libcamera_source *src = to_libcamera_source(s);
+	if(src->video_src.type != VIDEO_SOURCE_ENCODED) {
+		return 0;
+	}
+
+	if(bufs->nbufs < src->video.buffers.nbufs) {
+		return -EINVAL;
+	}
+
+	for (unsigned int i = 0; i < src->video.buffers.nbufs; i++) {
+		src->video.buffers.buffers[i].mem = bufs->buffers[i].mem;
+	}
+	return 0;
+}
+
+static int libcamera_source_video_queue_buffer(struct video_source *s, struct video_buffer *buf)
+{
+	struct libcamera_source *src = to_libcamera_source(s);
+
+	if(!src || !buf)
+		return -EINVAL;
+	
+	for (auto &request : src->video.requests) {
+		if (request->cookie() == buf->index) {
+			request->reuse(Request::ReuseBuffers);
+
+			int ret = src->camera->queueRequest(request.get());
+			if (ret < 0) {
+				std::cerr << "Failed to re-queue video request: "
+						<< strerror(-ret) << std::endl;
+				return ret;
+			}
+
+			break;
+
+
+		}
+	}
+	return 0;
+}
+
+static int libcamera_source_free_buffers(struct video_source *s)
+{
+	struct libcamera_source *src = to_libcamera_source(s);
+
+	if(!src)
+		return 0;
+
+	for (auto const& [key, val] : src->video.mapped_buffers_) {
+		munmap(val.data(), val.size());
+	}
+
+	src->video.mapped_buffers_.clear();
+
+	for (auto const& [key, val] : src->still.mapped_buffers_) {
+		munmap(val.data(), val.size());
+	}
+
+	src->still.mapped_buffers_.clear();
+
+	if(src->video.allocator) {
+		delete src->video.allocator;
+		src->video.allocator = nullptr;
+	}
+	if(src->still.allocator) {
+		delete src->still.allocator;
+		src->still.allocator = nullptr;
+	}
+
+	free(src->video.buffers.buffers);
+	src->video.buffers.buffers = nullptr;
+	src->video.buffers.nbufs = 0;
+
+	return 0;
+}
+
+static int libcamera_source_stream_on(struct video_source *s) 
+{
+	struct libcamera_source *src = to_libcamera_source(s);
+	int ret;
+
+	const auto &video_buffers = src->video.allocator->buffers(src->video.stream);
+
+	for (unsigned int i = 0; i < video_buffers.size(); i++) {
+		std::unique_ptr<Request> request = src->camera->createRequest(i);
+		if (!request) {
+			std::cerr << "Failed to create request" << std::endl;
+			return -ENOMEM;
+		}
+
+		int ret.= request->addBuffer(src->video.stream,
+							video_buffers[i].get());
+		
+		if (ret < 0) {
+			std::cerr << "Failed to add video buffer to request: " 
+					<< strerror(-ret) << std::endl;
+			return ret;
+		}
+
+
+		src->video.requests.push_back(std::move(request));
+
+	}
+
+	int ret = src->camera->start(&src->controls);
+	if (ret < 0) {
+		std::cerr << "Failed to start camera: " << strerror(-ret) << std::endl;
+		return ret;
+	}
+
+
+	for (auto &request : src->video.requests) {
+		ret = src->camera->queueRequest(request.get());
+		if (ret < 0) {
+			std::cerr << "Failed to queue video request: "
+					<< strerror(-ret) << std::endl;
+			src->camera->stop();
+			return ret;
+		}
+	}
+
+	return 0;
+}
+
+static int libcamera_source_stream_off(struct video_source *s)
+{
+	struct libcamera_source *src = to_libcamera_source(s);
+
+	if(!src || !src->camera)
+		return -EINVAL;
+
+	src->camera->stop();
+
+	src->video.requests.clear();
+
+	while(!src->video.completed_requests.empty()) {
+		Request *req = src->video.completed_requests.front();
+		src->video.completed_requests.pop();
+		delete req;
+	}
+
+	return 0;
+}
+
+static int libcamera_source_alloc_buffers(struct video_source *s, unsigned int nbufs)
+{
+	struct libcamera_source *src = to_libcamera_source(s);
+	int ret;
+
+	StreamConfiguration &videoConfig = src->config->at(0);
+	videoConfig.bufferCount = nbufs;
+
+	if(src->camera-<configure(src->config.get()) == CameraConfiguration::Invalid) {
+		std::cerr << "Failed to configure camera" << std::endl;
+		return -EINVAL;
+	}
+
+	src->video.stream = videoConfig.stream();
+
+	src->video.allocator = new FrameBufferAllocator(src->camera);
+	ret = src->video.allocator->allocate(src->video.stream);
+	if (ret < 0) {
+		std::cerr << "Failed to allocate video buffers: " << std::endl;
+		delete src->video.allocator;
+		src->video.allocator = nullptr;
+		return ret;
+	}
+
+	const auto &video_buffers = src->video.allocator->buffers(src->video.stream);
+	if (src->video_src.type == VIDEO_SOURCE_ENCODED) {
+		for (const auto &buffer : video_buffers) {
+			src->mapBuffer(buffer, false); // is_still = false
+		}
+	}
+
+	src->video.buffers.nbufs = video_buffers.size();
+	src->video.buffers.buffers = (struct video_buffer *)calloc(
+		src->video.buffers.nbufs, sizeof(struct video_buffer));
+	if (!src->video.buffers.buffers) {
+		std::cerr << "Failed to allocate video buffer structures" << std::endl;
+		return -ENOMEM;
+	}
+
+	for (unsigned int i = 0; i < video_buffers.size(); i++) {
+		src->video.buffers.buffers[i].index = i;
+		src->video.buffers.buffers[i].dmabuf = -1;
+	}
+
+	if(src->still.stream) {
+		src->still.allocator = new FrameBufferAllocator(src->camera);
+		ret = src->still.allocator->allocate(src->still.stream);
+		if (ret < 0) {
+			std::cerr << "Failed to allocate still buffers: " << std::endl;
+			delete src->still.allocator;
+			src->still.allocator = nullptr;
+			return ret;
+		}
+
+
+		const auto &still_buffers = src->stillş.allocator->buffers(src->still.stream);
+		for (const auto &buffer : still_buffers) {
+			src->mapBuffer(buffer, true); // is_still = true
+		}
+	}
+
+	return 0;
+}
+
+
+static const struct video_source_ops libcamera_source_video_ops = {
+	.destroy 		= libcamera_source_destroy,
+	.set_format 	= libcamera_source_video_set_format,
+	.set_frame_rate = libcamera_source_video_set_frame_rate,
+	.alloc_buffers 	= libcamera_source_alloc_buffers,
+	.export_buffers = libcamera_source_video_export_buffers,
+	.import_buffers = libcamera_source_video_import_buffers,
+	.free_buffers 	= libcamera_source_free_buffers,
+	.stream_on 		= libcamera_source_stream_on,
+	.stream_off 	= libcamera_source_stream_off,
+	.queue_buffer 	= libcamera_source_video_queue_buffer,
+	.fill_buffer 	= NULL,
+}
+
 
