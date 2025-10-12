@@ -77,6 +77,7 @@ struct libcamera_source {
 	void requestComplete(Request *request);
 	void outputReady(void *mem, size_t bytesused, int64_t timestamp, unsigned int cookie);
 	int captureStill();
+	bool streaming;
 
 };
 
@@ -285,7 +286,7 @@ static void libcamera_source_destroy(struct video_source *s)
 	
 	if(src->camera) {
 		src->camera->requestCompleted.disconnect(src);
-		src->camera->stop();
+		if (src->streaming) src->camera->stop();
 	}
 	
 	if (src->pfds[0] != -1)  close(src->pfds[0]);
@@ -517,7 +518,7 @@ static int libcamera_source_stream_on(struct video_source *s)
 
 	events_watch_fd(src->video_src.events, src->pfds[0], EVENT_READ,
                     process_camera_events, src);
-
+	src->streaming = true;
 	return 0;
 }
 
@@ -528,7 +529,7 @@ static int libcamera_source_stream_off(struct video_source *s)
 	if(!src || !src->camera)
 		return -EINVAL;
 
-
+	src->streaming = false;
 	src->camera->stop();
 
 	events_unwatch_fd(src->video_src.events, src->pfds[0], EVENT_READ);
@@ -639,6 +640,7 @@ struct video_source *libcamera_source_create(const char *devname)
 	if (!devname) return nullptr;
 
 	auto *src = new libcamera_source();
+	src->streaming = false;
 
 	if (pipe2(src->pfds, O_NONBLOCK) < 0) {
 		std::cerr << "Failed to create pipe: " << strerror(errno) << std::endl;
