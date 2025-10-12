@@ -7,6 +7,7 @@
 
 #ifndef __STILL_SOURCE_H__
 #define __STILL_SOURCE_H__
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <sys/time.h>
