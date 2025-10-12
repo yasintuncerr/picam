@@ -113,7 +113,6 @@ void libcamera_source::mapBuffer(const std::unique_ptr<FrameBuffer> &buffer, boo
 void libcamera_source::requestComplete(Request *request)
 {
 	if (request->status() == Request::RequestCancelled) {
-		delete request;
 		return;
 	}
 
@@ -127,7 +126,6 @@ void libcamera_source::requestComplete(Request *request)
 		write(pfds[1], "s", 1);
 	} else {
 		std::cerr << "requestComplete: unknown stream" << std::endl;
-		delete request;
 	}
 };
 
@@ -532,9 +530,7 @@ static int libcamera_source_stream_off(struct video_source *s)
 	src->video.requests.clear();
 
 	while(!src->video.completed_requests.empty()) {
-		Request *req = src->video.completed_requests.front();
 		src->video.completed_requests.pop();
-		delete req;
 	}
 
 	return 0;
