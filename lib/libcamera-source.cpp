@@ -532,7 +532,7 @@ static int libcamera_source_stream_off(struct video_source *s)
 	src->camera->stop();
 
 	events_unwatch_fd(src->video_src.events, src->pfds[0], EVENT_READ);
-	
+
 	while(!src->video.completed_requests.empty()) {
 		src->video.completed_requests.pop();
 	}
@@ -694,7 +694,7 @@ struct video_source *libcamera_source_create(const char *devname)
 	}
 
 	src->config = src->camera->generateConfiguration(
-		{StreamRole::VideoRecording});
+		{StreamRole::VideoRecording, StreamRole::StillCapture});
 	
 	if (src->config) {
 		StreamConfiguration &stillConfig = src->config->at(1);
