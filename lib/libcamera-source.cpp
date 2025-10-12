@@ -213,7 +213,7 @@ static void libcamera_source_video_process(libcamera_source *src)
 	 * compression.
 	 */
 	if(src->video_src.type == VIDEO_SOURCE_ENCODED) {
-		if (!src->video.encoder) { delete request; return; 	}
+		if (!src->video.encoder) {return;}
 
 		int64_t timestamp_ns = fb->metadata().timestamp;
 		StreamInfo info = src->video.encoder->getStreamInfo(src->video.stream);
@@ -527,12 +527,11 @@ static int libcamera_source_stream_off(struct video_source *s)
 
 	src->camera->stop();
 
-	src->video.requests.clear();
-
 	while(!src->video.completed_requests.empty()) {
 		src->video.completed_requests.pop();
 	}
 
+	src->video.requests.clear();
 	return 0;
 }
 
