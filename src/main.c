@@ -10,6 +10,7 @@
 #include <signal.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <stdlib.h>
 
 #include "config.h"
 #include "configfs.h"
@@ -221,7 +222,7 @@ done:
 		printf("Stopping HTTP capture server\n");
 		http_capture_destroy(http_server);
 	}
-	
+
 	uvc_stream_delete(stream);
 	video_source_destroy(src);
 	events_cleanup(&events);
