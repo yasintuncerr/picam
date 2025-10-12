@@ -7,8 +7,8 @@
  * Contact: Yasin Tunçer <yasintuncerr@gmail.com>
 */
 
-#ifndef __HTTP_CAPTURE_H__
-#define __HTTP_CAPTURE_H__
+#ifndef __CAPTURE_H__
+#define __CAPTURE_H__
 
 struct video_source;
 struct events;
@@ -33,4 +33,4 @@ struct http_server *http_capture_new(int port, struct video_source *vid_src,
  */
 void http_capture_destroy(struct http_server *server);
 
-#endif /* __HTTP_CAPTURE_H__ */
+#endif /* __CAPTURE_H__ */
