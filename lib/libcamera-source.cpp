@@ -732,7 +732,8 @@ void libcamera_source_init(struct video_source *s, struct events *events)
 }
 
 extern "C" struct still_source *libcamera_get_still_source(struct video_source *s) {
-	return &to_libcamera_source(s)->still_src;
+    struct libcamera_source *src = to_libcamera_source(s);
+    return &src->still_src;
 }
 
 extern "C" void libcamera_still_source_set_callback(struct still_source *ssrc, still_capture_ready_t cb, void *data) {
