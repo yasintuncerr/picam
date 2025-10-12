@@ -2,7 +2,7 @@
 
 libuvcgadget = dependency('uvcgadget')
 
-gadget = executable('uvc-gadget', 'main.c',
+gadget = executable('picam', 'main.c',
                     dependencies : [
                         libuvcgadget,
                     ],
