@@ -10,6 +10,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <sys/time.h>
+#include <stdint.h>
 
 
 struct v4l2_pix_format;
@@ -31,6 +32,9 @@ struct still_buffer {
     struct timeval timestamp;
     bool error;
     void *mem;
+    unsigned int width;
+    unsigned int height;
+    uint32_t pixelformat;
 };
 
 
