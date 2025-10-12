@@ -23,4 +23,6 @@ struct http_server;
  * Returns a pointer to the newly created HTTP capture instance, or NULL on failure.
  */
 struct http_server *http_capture_new(int port);
+void http_capture_destroy(struct http_server *server);
+#endif /* __CAPTURE_H__ */
 
