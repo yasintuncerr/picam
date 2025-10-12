@@ -298,7 +298,7 @@ static void libcamera_source_destroy(struct video_source *s)
 }
 
 static int libcamera_source_video_set_format(struct video_source *s,
-									struct v4l2_format *fmt)
+									struct v4l2_pix_format *fmt)
 {
 	struct libcamera_source *src = to_libcamera_source(s);
 	StreamConfiguration &cfg = src->config->at(0);
@@ -351,8 +351,8 @@ static int libcamera_source_video_set_frame_rate(struct video_source *s, unsigne
 {
 	struct libcamera_source *src = to_libcamera_source(s);
 
-	in64_t frame_time = 1000000 /fps;
-	
+	int64_t frame_time = 1000000 / fps;
+
 	src->controls.set(controls::FrameDurationLimits,
 					Span<const int64_t, 2>({frame_time, frame_time}));
 	return 0;
@@ -370,7 +370,7 @@ static int libcamera_source_video_export_buffers(struct video_source *s, struct 
 
 	for (unsigned int i = 0; i < buffers.size(); i++) {
 		exported_set->buffers[i].index = buffers[i]->planes()[0].length;
-		exported_set->buffers[i].dmabuf = buffers[i]->planes()[0].fd.get();
+		exported_set->buffers[i].size = buffers[i]->planes()[0].fd.get();
 	}
 
 	*bufs = exported_set;
@@ -385,7 +385,7 @@ static int libcamera_source_video_import_buffers(struct video_source *s,
 		return 0;
 	}
 
-	if(bufs->nbufs < src->video.buffers.nbufs) {
+	if(bufs->nbufs != src->video.buffers.nbufs) {
 		return -EINVAL;
 	}
 
@@ -470,8 +470,7 @@ static int libcamera_source_stream_on(struct video_source *s)
 			return -ENOMEM;
 		}
 
-		int ret.= request->addBuffer(src->video.stream,
-							video_buffers[i].get());
+		ret = request->addBuffer(src->video.stream, video_buffers[i].get());
 		
 		if (ret < 0) {
 			std::cerr << "Failed to add video buffer to request: " 
@@ -532,7 +531,7 @@ static int libcamera_source_alloc_buffers(struct video_source *s, unsigned int n
 	StreamConfiguration &videoConfig = src->config->at(0);
 	videoConfig.bufferCount = nbufs;
 
-	if(src->camera-<configure(src->config.get()) == CameraConfiguration::Invalid) {
+	if(src->camera->configure(src->config.get()) < 0) {
 		std::cerr << "Failed to configure camera" << std::endl;
 		return -EINVAL;
 	}
@@ -579,7 +578,7 @@ static int libcamera_source_alloc_buffers(struct video_source *s, unsigned int n
 		}
 
 
-		const auto &still_buffers = src->stillş.allocator->buffers(src->still.stream);
+		const auto &still_buffers = src->still.allocator->buffers(src->still.stream);
 		for (const auto &buffer : still_buffers) {
 			src->mapBuffer(buffer, true); // is_still = true
 		}
@@ -603,4 +602,128 @@ static const struct video_source_ops libcamera_source_video_ops = {
 	.fill_buffer 	= NULL,
 }
 
+static int still_source_capture_wrapper(struct still_source *ssrc) {
+	return container_of(
+		ssrc,
+		libcamera_source,
+		still_src
+	)->captureStill();
+}
 
+static const struct still_source_ops libcamera_source_still_ops = {
+	.capture = still_source_capture_wrapper,
+	.destroy = nullptr,
+	.set_format = nullptr,
+	.alloc_buffer = nullptr,
+	.free_buffer = nullptr,
+	.get_buffer = nullptr,
+}
+
+
+
+
+struct video_source *libcamera_source_create(const char *devname)
+{
+	if (!devname) return nullptr;
+
+	auto *src = new libcamera_source();
+
+	if (pipe2(src->pfds, O_NONBLOCK) < 0) {
+		std::cerr << "Failed to create pipe: " << strerror(errno) << std::endl;
+		delete src;
+		return nullptr;
+	}
+
+	src->video_src.ops = &libcamera_source_video_ops;
+	src->video_src.type = VIDEO_SOURCE_DMABUF;
+	src->still_src.ops = &libcamera_source_still_ops;
+
+
+	src->cm = std::make_unique<CameraManager>();
+	src->cm->start();
+
+	if(src->cm->cameras().empty()) {
+		delete src;
+		return nullptr;
+	}
+
+	if (std::isdigit(devname[0])) {
+		
+		unsigned long index = std::atoi(devname);
+
+		if (index >= src->cm->cameras().size()) {
+			std::cerr << "Camera index out of range" << std::endl;
+			delete src;
+			return nullptr;
+		} 
+		else {
+			
+			src->camera = src->cm->cameras()[index];
+			if (!src->camera){
+				delete src;
+				return nullptr;
+			}
+		}
+		
+		if (!src->camera->acquire()) {
+			delete src;
+			return nullptr;
+		}
+
+		src->config = src->camera->generateConfiguration(
+			{StreamRole::VideoRecording, StreamRole::StillCapture});
+		
+		if (src->config) {
+			StreamConfiguration &stillConfig = src->config->at(1);
+			stillConfig.pixelFormat = PixelFormat(V4L2_PIX_FMT_SRGGB12);
+			stillConfig.size.width = 4056;
+			stillConfig.size.height = 3040;
+			stillConfig.bufferCount = 1;
+			
+			if (src->config->validate() == CameraConfiguration::Invalid) {
+				src->config = nullptr;
+			}
+			else {
+				src->still.stream = stillConfig.stream();
+			}
+		}
+		
+		if(!src->config) {
+			src->config = src->camera->generateConfiguration(
+				{StreamRole::VideoRecording});
+			if(!src->config) {
+				src->camera->release();
+				delete src;
+				return nullptr;
+			}
+		}
+		}
+
+		src->camera->requestCompleted.connect(src, &libcamera_source::requestComplete);
+
+		const ControlInfoMap &infoMap = src->camera->controls();
+		if (infoMap.find(&controls::AfMode) != infoMap.end()) {
+			src->controls.set(controls::AfMode, controls::AfModeContinuous);
+		}
+    	return &src->video_src;
+		
+}
+
+void libcamera_source_init(struct video_source *s, struct events *events)
+{
+	struct libcamera_source *src = to_libcamera_source(s);
+
+	src->video_src.events = events;
+	events_watch_fd(events, src->pfds[0], EVENT_READ, 
+		process_camera_events, src);
+}
+
+extern "C" struct still_source *libcamera_get_still_source(struct video_source *s) {
+	return &to_libcamera_source(s)->still_src;
+}
+
+extern "C" void libcamera_still_source_set_callback(struct still_source *ssrc, still_capture_ready_t cb, void *data) {
+	auto *src = container_of(ssrc, libcamera_source, still_src);
+	src->still.capture_ready_cb = cb;
+	src->still.capture_ready_data = data;
+}
