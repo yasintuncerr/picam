@@ -102,6 +102,8 @@ static void *client_thread_func(void *arg) {
         } else {
             libcamera_still_source_set_callback(session->server->still_src, still_capture_ready_cb, session);
 
+            printf("waiting wamrmup")
+            sleep(2); // Kamera ısınması için bekle
             if (still_source_capture(session->server->still_src) < 0) {
                 const char *response = "HTTP/1.1 500 Internal Server Error\r\n\r\nFailed to start capture";
                 write(session->fd, response, strlen(response));
