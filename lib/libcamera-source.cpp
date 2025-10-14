@@ -186,6 +186,10 @@ int libcamera_source::captureStill()
     } else {
        
 	*/
+
+	int64_t manual_exposure = 200000;
+    float manual_gain = 8.0f;
+
     request->controls().set(controls::AeEnable, false);
     request->controls().set(controls::AwbEnable, false); // AWB'yi de kapatalım, renkler garip çıkabilir ama parlaklık önemli
     request->controls().set(controls::ExposureTime, manual_exposure);
