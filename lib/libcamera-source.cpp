@@ -187,21 +187,21 @@ int libcamera_source::captureStill()
        
 	*/
 
-	int64_t manual_exposure = 300000;
-    float manual_gain = 12.0f;
+	int64_t manual_exposure = 500000;
+    float manual_gain = 20.0f;
 
     printf("!!! FORCING MANUAL CONTROLS FOR TEST !!!\n");
     printf("  - Manual Exposure: %lldus, Manual Gain: %.2f\n", (long long)manual_exposure, manual_gain);
 
     // Otomatik algoritmaları kapatıp manuel değerleri set et
-    request->controls().set(controls::AeEnable, true);
-    request->controls().set(controls::AwbEnable, true); // AWB'yi de kapatalım, renkler garip çıkabilir ama parlaklık önemli
+    request->controls().set(controls::AeEnable, false);
+    request->controls().set(controls::AwbEnable, false); // AWB'yi de kapatalım, renkler garip çıkabilir ama parlaklık önemli
     libcamera::Span<const int64_t, 2> frame_duration_limits({0, 1000000});
     request->controls().set(controls::FrameDurationLimits, frame_duration_limits);
 
     // 4. Manuel pozlama ve kazanç değerlerimizi set et.
-    //request->controls().set(controls::ExposureTime, manual_exposure);
-    //request->controls().set(controls::AnalogueGain, manual_gain);
+    request->controls().set(controls::ExposureTime, manual_exposure);
+    request->controls().set(controls::AnalogueGain, manual_gain);
 
     //}
 
