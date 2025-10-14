@@ -183,7 +183,7 @@ int main(int argc, char *argv[])
 #ifdef HAVE_LIBCAMERA
 		if (camera) {
 			printf("Starting HTTP capture server on port %d\n", http_port);
-			http_server = http_capture_new(http_port, src, &events);
+			http_server = http_capture_new(http_port, src);
 			if (!http_server) {
 				fprintf(stderr, "Failed to create HTTP capture server\n");
 				ret = 1;
