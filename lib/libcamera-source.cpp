@@ -57,6 +57,8 @@ struct libcamera_source {
 		MjpegEncoder *encoder;
 		std::unordered_map<FrameBuffer *, Span<uint8_t>> mapped_buffers_;
 		struct video_buffer_set buffers;
+		int64_t latest_exposure_time;
+    	float latest_analogue_gain;
 	} video;
 
 	/* Still Stream resources */
@@ -70,6 +72,9 @@ struct libcamera_source {
 	} still;
 
 	int pfds[2];
+	
+	
+
 
 	void mapBuffer(const std::unique_ptr<FrameBuffer> &buffer, bool is_still);
 	void requestComplete(Request *request);
@@ -113,10 +118,17 @@ void libcamera_source::requestComplete(Request *request)
 	if (request->status() == Request::RequestCancelled) {
 		return;
 	}
-
+	const ControlList &metadata = request->metadata();
 	bool is_still = request->findBuffer(config->at(1).stream()) != nullptr;
 	bool is_video = request->findBuffer(config->at(0).stream()) != nullptr;
 	if(is_video) {
+		auto exp = metadata.get(controls::ExposureTime);
+        if (exp)
+            this->video.latest_exposure_time = *exp;
+
+        auto gain = metadata.get(controls::AnalogueGain);
+        if (gain)
+            this->video.latest_analogue_gain = *gain;
 		video.completed_requests.push(request);
 		write(pfds[1], "v", 1);
 	} else if (is_still) {
@@ -151,8 +163,18 @@ int libcamera_source::captureStill()
 		return -ENOMEM;
 	}
 
-	request->controls() = this->controls;
-
+	if (this->video.latest_exposure_time > 0 && this->video.latest_analogue_gain > 0.0f) {
+        printf("Applying controls from running stream: Exposure %ldus, Gain %.2f\n",
+               this->video.latest_exposure_time, this->video.latest_analogue_gain);
+        request->controls().set(controls::ExposureTime, this->video.latest_exposure_time);
+        request->controls().set(controls::AnalogueGain, this->video.latest_analogue_gain);
+    } else {
+       
+		
+        printf("Warning: No metadata from video stream yet. Falling back to enabling AE/AWB.\n");
+        request->controls().set(controls::AeEnable, true);
+        request->controls().set(controls::AwbEnable, true);
+    }
 
 	FrameBuffer *buffer_to_use = still.mapped_buffers_.begin()->first;
 	Stream *stream = config->at(1).stream();
@@ -681,6 +703,10 @@ struct video_source *libcamera_source_create(const char *devname)
 	}
 
 	src = new libcamera_source;
+
+
+	src->video.latest_exposure_time = 0;
+    src->video.latest_analogue_gain = 0.0f;
 
 	/*
 	 * Event handling in libuvcgadget currently depends on select(), but
