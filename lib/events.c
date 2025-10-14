@@ -103,9 +103,9 @@ void events_unwatch_fd(struct events *events, int fd, enum event_type type)
 static void events_dispatch(struct events *events, const fd_set *rfds,
 			    const fd_set *wfds, const fd_set *efds)
 {
-	struct event_fd *event;
+	struct event_fd *event, *next;
 
-	list_for_each_entry(event, &events->events, list) {
+	list_for_each_entry_safe(event, next, &events->events, list) {
 		if (event->type == EVENT_READ &&
 		    FD_ISSET(event->fd, rfds))
 			event->callback(event->priv);
