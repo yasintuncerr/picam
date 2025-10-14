@@ -132,7 +132,20 @@ void libcamera_source::requestComplete(Request *request)
 		video.completed_requests.push(request);
 		write(pfds[1], "v", 1);
 	} else if (is_still) {
+
 		still.completed_requests.push(request);
+		print("Video Exposure: %lldus, Gain: %.2f\n",
+			  (long long)this->video.latest_exposure_time,
+			  this->video.latest_analogue_gain);
+		auto exp = metadata.get(controls::ExposureTime);
+		if (exp)
+			print("  Still Exposure: %lldus\n", (long long)*exp);
+
+		auto gain = metadata.get(controls::AnalogueGain);
+		if (gain)
+			print("  Still Gain: %.2f\n", *gain);
+		
+		
 		write(pfds[1], "s", 1);
 	} else {
 		std::cerr << "requestComplete: unknown stream" << std::endl;
