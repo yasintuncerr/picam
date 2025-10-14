@@ -142,9 +142,9 @@ void libcamera_source::outputReady(void *mem, size_t bytesused, int64_t timestam
 
 int libcamera_source::captureStill()
 {
-	if (still.capture_in_progress || still.mapped_buffers_.empty()) {
-		return -EBUSY;
-	}
+	//if (still.capture_in_progress || still.mapped_buffers_.empty()) {
+	//	return -EBUSY;
+	//}
 
 	std::unique_ptr<Request> request = camera->createRequest();
 	if (!request) {
@@ -696,6 +696,8 @@ struct video_source *libcamera_source_create(const char *devname)
 
 	src->video_src.ops = &libcamera_source_video_ops;
 	src->video_src.type = VIDEO_SOURCE_DMABUF;
+
+	src->still_src.ops = &libcamera_source_still_ops;
 
 	src->cm = std::make_unique<CameraManager>();
 	src->cm->start();
