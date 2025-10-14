@@ -207,7 +207,7 @@ int libcamera_source::captureStill()
     request->controls().set(controls::DigitalGain, manual_digital_gain);
 
     printf(">>> FINAL ATTEMPT: Manual Exposure/Gain + AWB + FrameDuration Override <<<\n");
-    printf("  - Target Exposure: %ldus\n", manual_exposure);
+    printf("  - Target Exposure: %lldus\n", (long long)manual_exposure);
     printf("  - Target AnalogueGain: %.2f\n", manual_analogue_gain);
     printf("  - Target DigitalGain: %.2f\n", manual_digital_gain);
 
