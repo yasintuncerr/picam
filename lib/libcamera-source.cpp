@@ -191,7 +191,7 @@ int libcamera_source::captureStill()
     float manual_gain = 8.0f;
 
     printf("!!! FORCING MANUAL CONTROLS FOR TEST !!!\n");
-    printf("  - Manual Exposure: %ldus, Manual Gain: %.2f\n", (long long)manual_exposure, manual_gain);
+    printf("  - Manual Exposure: %lldus, Manual Gain: %.2f\n", (long long)manual_exposure, manual_gain);
 
     // Otomatik algoritmaları kapatıp manuel değerleri set et
     request->controls().set(controls::AeEnable, false);
