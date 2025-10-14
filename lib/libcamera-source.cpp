@@ -151,6 +151,9 @@ int libcamera_source::captureStill()
 		return -ENOMEM;
 	}
 
+	request->controls() = this->controls;
+
+
 	FrameBuffer *buffer_to_use = still.mapped_buffers_.begin()->first;
 	Stream *stream = config->at(1).stream();
 	int ret = request->addBuffer(stream, buffer_to_use);
