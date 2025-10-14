@@ -51,7 +51,6 @@ struct libcamera_source {
 
 	/* Video Stream resources */
 	struct {
-		Stream *stream;
 		FrameBufferAllocator *allocator;
 		std::vector<std::unique_ptr<Request>> requests;
 		std::queue<Request *> completed_requests;
@@ -62,7 +61,6 @@ struct libcamera_source {
 
 	/* Still Stream resources */
 	struct {
-		Stream *stream;
 		FrameBufferAllocator *allocator;
 		std::queue<Request *> completed_requests;
 		std::unordered_map<FrameBuffer *, Span<uint8_t>> mapped_buffers_;
@@ -116,12 +114,12 @@ void libcamera_source::requestComplete(Request *request)
 		return;
 	}
 
-	const Stream *request_stream = request->buffers().begin()->first;
-
-	if(request_stream == video.stream) {
+	bool is_still = request->findBuffer(config->at(1).stream()) != nullptr;
+	bool is_video = request->findBuffer(config->at(0).stream()) != nullptr;
+	if(is_video) {
 		video.completed_requests.push(request);
 		write(pfds[1], "v", 1);
-	} else if (request_stream == still.stream) {
+	} else if (is_still) {
 		still.completed_requests.push(request);
 		write(pfds[1], "s", 1);
 	} else {
@@ -144,7 +142,7 @@ void libcamera_source::outputReady(void *mem, size_t bytesused, int64_t timestam
 
 int libcamera_source::captureStill()
 {
-	if (still.capture_in_progress || !still.stream || still.mapped_buffers_.empty()) {
+	if (still.capture_in_progress || still.mapped_buffers_.empty()) {
 		return -EBUSY;
 	}
 
@@ -154,8 +152,8 @@ int libcamera_source::captureStill()
 	}
 
 	FrameBuffer *buffer_to_use = still.mapped_buffers_.begin()->first;
-
-	int ret = request->addBuffer(still.stream, buffer_to_use);
+	Stream *stream = config->at(1).stream();
+	int ret = request->addBuffer(stream, buffer_to_use);
 	if (ret < 0) {
 		return ret;
 	}
@@ -192,165 +190,175 @@ static void process_camera_events(void *d)
 
 static void libcamera_source_video_process(libcamera_source *src)
 {
-	if(src->video.completed_requests.empty())
+	Stream *stream = src->config->at(0).stream();
+	struct video_buffer buffer;
+	Request *request;
+	//char buf;
+
+	/*
+	 * We need to perform a read here or the fd will stay active each time
+	 * the event loop cycles.
+	 */
+	//read(src->pfds[0], &buf, 1);
+
+	if (src->video.completed_requests.empty())
 		return;
 
-	Request *request = src->video.completed_requests.front();
+	request = src->video.completed_requests.front();
 	src->video.completed_requests.pop();
 
-	FrameBuffer *fb = request->buffers().begin()->second;
+	/* We have only a single buffer per request, so just pick the first */
+	FrameBuffer *framebuf = request->buffers().begin()->second;
 
-	if(src->video_src.type == VIDEO_SOURCE_ENCODED) {
-		if (!src->video.encoder) {
-			// Request'i tekrar queue et
-			request->reuse(Request::ReuseBuffers);
-			src->camera->queueRequest(request);
-			return;
-		}
-
-		int64_t timestamp_ns = fb->metadata().timestamp;
-		StreamInfo info = src->video.encoder->getStreamInfo(src->video.stream);
-		auto span_it = src->video.mapped_buffers_.find(fb);
-		
-		if(span_it == src->video.mapped_buffers_.end()) {
-			// Request'i tekrar queue et
-			request->reuse(Request::ReuseBuffers);
-			src->camera->queueRequest(request);
-			return;
-		}
-		
-		void *mem = span_it->second.data();
-		size_t size = span_it->second.size();
+	/*
+	 * If we have an encoder, then rather than simply detailing the buffer
+	 * here and passing it back to the sink we need to queue it to the
+	 * encoder. The encoder will queue that buffer to the sink after
+	 * compression.
+	 */
+	if (src->video_src.type == VIDEO_SOURCE_ENCODED) {
+		int64_t timestamp_ns = framebuf->metadata().timestamp;
+		StreamInfo info = src->video.encoder->getStreamInfo(stream);
+		auto span = src->video.mapped_buffers_.find(framebuf);
+		void *mem = span->second.data();
 		void *dest = src->video.buffers.buffers[request->cookie()].mem;
+		unsigned int size = span->second.size();
 
 		src->video.encoder->EncodeBuffer(mem, dest, size, info, timestamp_ns / 1000, request->cookie());
-		
-		// Request'i tekrar queue et
-		request->reuse(Request::ReuseBuffers);
-		src->camera->queueRequest(request);
+
 		return;
-	} 
-	
-	// DMABUF mode - buffer'ı handler'a gönder ve tekrar queue'ya koy
-	struct video_buffer buffer;
+	}
+
 	buffer.index = request->cookie();
-	buffer.size = fb->planes()[0].length;
+
+	/* TODO: Correct this for formats libcamera treats as multiplanar */
+	buffer.size = framebuf->planes()[0].length;
 	buffer.mem = NULL;
-	buffer.bytesused = fb->metadata().planes()[0].bytesused;
-	buffer.timestamp.tv_sec = fb->metadata().timestamp / 1000000;
-	buffer.timestamp.tv_usec = fb->metadata().timestamp % 1000000;
+	buffer.bytesused = framebuf->metadata().planes()[0].bytesused;
+	buffer.timestamp.tv_usec = framebuf->metadata().timestamp;
 	buffer.error = false;
 
-	// Handler'ı çağır
 	src->video_src.handler(src->video_src.handler_data, &src->video_src, &buffer);
-	
-	// Request'i tekrar queue et - bu çok önemli!
-	request->reuse(Request::ReuseBuffers);
-	int ret = src->camera->queueRequest(request);
-	if (ret < 0) {
-		std::cerr << "Failed to requeue request: " << strerror(-ret) << std::endl;
-	}
 }
+
 
 static void libcamera_source_still_process(libcamera_source *src)
 {
-	if(src->still.completed_requests.empty())
-		return;
+    Stream *stream = src->config->at(1).stream();
+    Request *request;
 
-	Request *request = src->still.completed_requests.front();
-	src->still.completed_requests.pop();
+    if(src->still.completed_requests.empty())
+        return;
 
-	FrameBuffer *fb = request->buffers().begin()->second;
+    request = src->still.completed_requests.front();
+    src->still.completed_requests.pop();
 
-	auto span_it = src->still.mapped_buffers_.find(fb);
-	if(span_it == src->still.mapped_buffers_.end()) {
-		src->still.capture_in_progress = false;
-		delete request;
-		return;
-	}
-	libcamera::StreamConfiguration const &cfg = src->still.stream->configuration();
+    FrameBuffer *fb = request->buffers().begin()->second;
 
-	struct still_buffer buffer;
-	buffer.mem = span_it->second.data();
-	buffer.size = span_it->second.size();
-	buffer.bytesused = fb->metadata().planes()[0].bytesused;
-	buffer.timestamp.tv_sec = fb->metadata().timestamp / 1000000;
-	buffer.timestamp.tv_usec = fb->metadata().timestamp % 1000000;
-	buffer.error = false;
-	buffer.width = cfg.size.width;
-	buffer.height = cfg.size.height;
-	buffer.pixelformat = cfg.pixelFormat.fourcc();
-	
-	if(src->still.capture_ready_cb)
-		src->still.capture_ready_cb(src->still.capture_ready_data, &buffer);
-	src->still.capture_in_progress = false;
-	delete request;
+    struct still_buffer buffer;
+    buffer.size = fb->planes()[0].length;
+    
+    // Mapped buffer'dan gerçek memory pointer'ını al
+    auto span = src->still.mapped_buffers_.find(fb);
+    if (span != src->still.mapped_buffers_.end()) {
+        buffer.mem = span->second.data();
+    } else {
+        buffer.mem = NULL;
+    }
+    
+    buffer.bytesused = fb->metadata().planes()[0].bytesused;
+    buffer.timestamp.tv_sec = fb->metadata().timestamp / 1000000;
+    buffer.timestamp.tv_usec = fb->metadata().timestamp % 1000000;
+    buffer.error = false;
+    buffer.width = stream->configuration().size.width;
+    buffer.height = stream->configuration().size.height;
+    buffer.pixelformat = stream->configuration().pixelFormat.fourcc();
+
+    if(src->still.capture_ready_cb)
+        src->still.capture_ready_cb(src->still.capture_ready_data, &buffer);
+    
+    src->still.capture_in_progress = false;
+    delete request; // Bu doğru - raw pointer olarak alındı
 }
 
 static void libcamera_source_destroy(struct video_source *s)
 {
 	struct libcamera_source *src = to_libcamera_source(s);
 
-	if(!src) return;
-	
-	if(src->camera) {
-		src->camera->requestCompleted.disconnect(src);
-		if (src->streaming) src->camera->stop();
-	}
-	
-	if (src->pfds[0] != -1)  close(src->pfds[0]);
-	if (src->pfds[1] != -1)  close(src->pfds[1]);
-	
-	for (auto const [key, val] : src->video.mapped_buffers_) munmap(val.data(), val.size());
-	for (auto const [key, val] : src->still.mapped_buffers_) munmap(val.data(), val.size());
+	src->camera->requestCompleted.disconnect(src);
 
-	if(src->video.allocator) delete src->video.allocator;
-	if(src->still.allocator) delete src->still.allocator;
-	
-	if(src->video.encoder) delete src->video.encoder;
-	
-	free(src->video.buffers.buffers);
-	if(src->camera) src->camera->release();
-	if (src->cm) src->cm->stop();
+	/* Closing the event notification file descriptors */
+	close(src->pfds[0]);
+	close(src->pfds[1]);
+
+	src->camera->release();
+	src->camera.reset();
+	src->cm->stop();
 	delete src;
 }
 
+
 static int libcamera_source_video_set_format(struct video_source *s,
-									struct v4l2_pix_format *fmt)
+				       struct v4l2_pix_format *fmt)
 {
 	struct libcamera_source *src = to_libcamera_source(s);
-	StreamConfiguration &cfg = src->config->at(0);
+	StreamConfiguration &streamConfig = src->config->at(0);
 	__u32 chosen_pixelformat = fmt->pixelformat;
 
-	cfg.size.width = fmt->width;
-	cfg.size.height = fmt->height;
-	cfg.pixelFormat = PixelFormat(fmt->pixelformat);
+	streamConfig.size.width = fmt->width;
+	streamConfig.size.height = fmt->height;
+	streamConfig.pixelFormat = PixelFormat(chosen_pixelformat);
+
+	src->config->validate();
 
 #ifdef CONFIG_CAN_ENCODE
-	if (chosen_pixelformat == V4L2_PIX_FMT_MJPEG && cfg.pixelFormat.fourcc() != chosen_pixelformat) {
+	/*
+	 * If the user requests MJPEG but the camera can't supply it, try again
+	 * with YUV420 and initialise an MjpegEncoder to compress the data.
+	 */
+	if (chosen_pixelformat == V4L2_PIX_FMT_MJPEG &&
+	    streamConfig.pixelFormat.fourcc() != chosen_pixelformat) {
 		std::cout << "MJPEG format not natively supported; encoding YUV420" << std::endl;
-		if (!src->video.encoder) {
-			src->video.encoder = new MjpegEncoder();
-			src->video.encoder->SetOutputReadyCallback(
-				std::bind(&libcamera_source::outputReady, src, _1, _2, _3, _4));
-		}
-		cfg.pixelFormat = PixelFormat(V4L2_PIX_FMT_YUV420);
+
+		src->video.encoder = new MjpegEncoder();
+		src->video.encoder->SetOutputReadyCallback(std::bind(&libcamera_source::outputReady, src, _1, _2, _3, _4));
+
+		streamConfig.pixelFormat = PixelFormat(V4L2_PIX_FMT_YUV420);
 		src->video_src.type = VIDEO_SOURCE_ENCODED;
+
+		src->config->validate();
 	}
 #endif
 
-	if (src->config->validate() == CameraConfiguration::Invalid) {
-		std::cerr << "Error: Final video configuration is invalid." << std::endl;
-		return -EINVAL;
-	}
+	if (fmt->pixelformat != streamConfig.pixelFormat.fourcc())
+		std::cerr << "Warning: set_format: Requested format unavailable" << std::endl;
 
-	std::cout << "Validated video format to " << cfg.toString() << std::endl;
+	std::cout << "setting format to " << streamConfig.toString() << std::endl;
 
-	fmt->pixelformat = (src->video_src.type == VIDEO_SOURCE_ENCODED) ? V4L2_PIX_FMT_MJPEG : cfg.pixelFormat.fourcc();
-	fmt->width = cfg.size.width;
-	fmt->height = cfg.size.height;
+	/*
+	 * No .configure() call at this stage, because we need to pick up the
+	 * number of buffers to use later on so we'd need to call it then too.
+	 */
+
+	fmt->width = streamConfig.size.width;
+	fmt->height = streamConfig.size.height;
+	fmt->pixelformat = src->video.encoder ? V4L2_PIX_FMT_MJPEG : streamConfig.pixelFormat.fourcc();
 	fmt->field = V4L2_FIELD_ANY;
+
+	/* TODO: Can we use libcamera helpers to get image size / stride? */
 	fmt->sizeimage = fmt->width * fmt->height * 2;
+
+	if (src->config) {
+		StreamConfiguration &stillConfig = src->config->at(1);
+		stillConfig.pixelFormat = PixelFormat(V4L2_PIX_FMT_SRGGB12);
+		stillConfig.size.width = 4056;
+		stillConfig.size.height = 3040;
+		stillConfig.bufferCount = 1;
+		
+		if (src->config->validate() == CameraConfiguration::Invalid) {
+			std::cout << "Still Capture couldn't set" << std::endl;
+		}
+	}
 
 	return 0;
 }
@@ -358,117 +366,123 @@ static int libcamera_source_video_set_format(struct video_source *s,
 static int libcamera_source_video_set_frame_rate(struct video_source *s, unsigned int fps)
 {
 	struct libcamera_source *src = to_libcamera_source(s);
-
 	int64_t frame_time = 1000000 / fps;
 
 	src->controls.set(controls::FrameDurationLimits,
-					Span<const int64_t, 2>({frame_time, frame_time}));
-	return 0;
-} 
+			  Span<const int64_t, 2>({ frame_time, frame_time }));
 
-static int libcamera_source_video_export_buffers(struct video_source *s, struct video_buffer_set **bufs)
+	return 0;
+}
+
+static int libcamera_source_video_export_buffers(struct video_source *s,
+					   struct video_buffer_set **bufs)
 {
 	struct libcamera_source *src = to_libcamera_source(s);
-	const auto &buffers = src->video.allocator->buffers(src->video.stream);
+	Stream *stream = src->config->at(0).stream();
+	const std::vector<std::unique_ptr<FrameBuffer>> &buffers = src->video.allocator->buffers(stream);
+	struct video_buffer_set *vid_buf_set;
+	unsigned int i;
 
-	struct video_buffer_set *exported_set = video_buffer_set_new(buffers.size());
-	if (!exported_set)
+	for (i = 0; i < buffers.size(); i++) {
+		const std::unique_ptr<FrameBuffer> &buffer = buffers[i];
+
+		src->video.buffers.buffers[i].size = buffer->planes()[0].length;
+		src->video.buffers.buffers[i].dmabuf = buffer->planes()[0].fd.get();
+	}
+
+	vid_buf_set = video_buffer_set_new(buffers.size());
+	if (!vid_buf_set)
 		return -ENOMEM;
 
-	for (unsigned int i = 0; i < buffers.size(); i++) {
-		size_t total_size = 0;
-		for (const auto &plane : buffers[i]->planes()) {
-			total_size += plane.length;
-		}
-		
-		exported_set->buffers[i].size = total_size;
-		exported_set->buffers[i].dmabuf = buffers[i]->planes()[0].fd.get();
+	for (i = 0; i < src->video.buffers.nbufs; ++i) {
+		struct video_buffer *buffer = &src->video.buffers.buffers[i];
+
+		vid_buf_set->buffers[i].size = buffer->size;
+		vid_buf_set->buffers[i].dmabuf = buffer->dmabuf;
 	}
 
-	*bufs = exported_set;
+	*bufs = vid_buf_set;
+
 	return 0;
 }
 
-static int libcamera_source_video_import_buffers(struct video_source *s, 
-						struct video_buffer_set *bufs)
+static int libcamera_source_video_import_buffers(struct video_source *s,
+					   struct video_buffer_set *buffers)
 {
 	struct libcamera_source *src = to_libcamera_source(s);
-	if(src->video_src.type != VIDEO_SOURCE_ENCODED) {
-		return 0;
-	}
 
-	if(bufs->nbufs != src->video.buffers.nbufs) {
-		return -EINVAL;
-	}
+	for (unsigned int i = 0; i < buffers->nbufs; i++)
+		src->video.buffers.buffers[i].mem = buffers->buffers[i].mem;
 
-	for (unsigned int i = 0; i < src->video.buffers.nbufs; i++) {
-		src->video.buffers.buffers[i].mem = bufs->buffers[i].mem;
-	}
 	return 0;
 }
 
-static int libcamera_source_video_queue_buffer(struct video_source *s, struct video_buffer *buf)
+static int libcamera_source_video_queue_buffer(struct video_source *s,
+					 struct video_buffer *buf)
 {
-	// Bu fonksiyon DMABUF modunda stream.c tarafından çağrılır
-	// Ancak libcamera'da buffer'lar otomatik olarak request içinde yönetilir
-	// Bu yüzden burada özel bir şey yapmamıza gerek yok
+	struct libcamera_source *src = to_libcamera_source(s);
+
+	for (std::unique_ptr<Request> &r : src->video.requests) {
+		if (r->cookie() == buf->index) {
+			r->reuse(Request::ReuseBuffers);
+			src->camera->queueRequest(r.get());
+
+			break;
+		}
+	}
+
 	return 0;
 }
 
 static int libcamera_source_free_buffers(struct video_source *s)
 {
 	struct libcamera_source *src = to_libcamera_source(s);
+	Stream *stream = src->config->at(0).stream();
 
-	if(!src)
-		return 0;
-
-	for (auto const& [key, val] : src->video.mapped_buffers_) {
-		munmap(val.data(), val.size());
-	}
+	for (auto &[buf, span] : src->video.mapped_buffers_)
+		munmap(span.data(), span.size());
 
 	src->video.mapped_buffers_.clear();
 
-	for (auto const& [key, val] : src->still.mapped_buffers_) {
-		munmap(val.data(), val.size());
-	}
+	src->video.allocator->free(stream);
+	delete src->video.allocator;
+	src->video.allocator = nullptr;
 
-	src->still.mapped_buffers_.clear();
+	stream = src->config->at(1).stream();
+	if (stream) {
+		for (auto &[buf, span] : src->still.mapped_buffers_)
+			munmap(span.data(), span.size());
+		
+		src->still.mapped_buffers_.clear();
 
-	if(src->video.allocator) {
-		delete src->video.allocator;
-		src->video.allocator = nullptr;
-	}
-	if(src->still.allocator) {
+		src->still.allocator->free(stream);
 		delete src->still.allocator;
 		src->still.allocator = nullptr;
 	}
 
-	free(src->video.buffers.buffers);
-	src->video.buffers.buffers = nullptr;
-	src->video.buffers.nbufs = 0;
-
 	return 0;
 }
 
-static int libcamera_source_stream_on(struct video_source *s) 
+
+static int libcamera_source_stream_on(struct video_source *s)
 {
 	struct libcamera_source *src = to_libcamera_source(s);
+	Stream *stream = src->config->at(0).stream();
 	int ret;
 
-	const auto &video_buffers = src->video.allocator->buffers(src->video.stream);
+	const std::vector<std::unique_ptr<FrameBuffer>> &buffers = src->video.allocator->buffers(stream);
 
-	for (unsigned int i = 0; i < video_buffers.size(); i++) {
+	for (unsigned int i = 0; i < buffers.size(); ++i) {
 		std::unique_ptr<Request> request = src->camera->createRequest(i);
 		if (!request) {
-			std::cerr << "Failed to create request" << std::endl;
+			std::cerr << "failed to create request" << std::endl;
 			return -ENOMEM;
 		}
 
-		ret = request->addBuffer(src->video.stream, video_buffers[i].get());
-		
+		const std::unique_ptr<FrameBuffer> &buffer = buffers[i];
+		ret = request->addBuffer(stream, buffer.get());
 		if (ret < 0) {
-			std::cerr << "Failed to add video buffer to request: " 
-					<< strerror(-ret) << std::endl;
+			std::cerr << "failed to set buffer for request" << std::endl;
 			return ret;
 		}
 
@@ -476,94 +490,110 @@ static int libcamera_source_stream_on(struct video_source *s)
 	}
 
 	ret = src->camera->start(&src->controls);
-	if (ret < 0) {
-		std::cerr << "Failed to start camera: " << strerror(-ret) << std::endl;
+	if (ret) {
+		std::cerr << "failed to start camera" << std::endl;
 		return ret;
 	}
 
-	for (auto &request : src->video.requests) {
+	for (std::unique_ptr<Request> &request : src->video.requests) {
 		ret = src->camera->queueRequest(request.get());
-		if (ret < 0) {
-			std::cerr << "Failed to queue video request: "
-					<< strerror(-ret) << std::endl;
+		if (ret) {
+			std::cerr << "failed to queue request" << std::endl;
 			src->camera->stop();
 			return ret;
 		}
 	}
 
+	/*
+	 * Given our event handling code is designed for V4L2 file descriptors
+	 * and lacks a way to trigger an event manually, we're using a pipe so
+	 * that we can watch the read end and write to the other end when
+	 * requestComplete() is ran.
+	 */
 	events_watch_fd(src->video_src.events, src->pfds[0], EVENT_READ,
-					process_camera_events, src);
-	src->streaming = true;
+			process_camera_events, src);
+
 	return 0;
 }
+
 
 static int libcamera_source_stream_off(struct video_source *s)
 {
 	struct libcamera_source *src = to_libcamera_source(s);
 
-	if(!src || !src->camera)
-		return -EINVAL;
-
-	src->streaming = false;
 	src->camera->stop();
-
 	events_unwatch_fd(src->video_src.events, src->pfds[0], EVENT_READ);
+	src->video.requests.clear();
 
-	while(!src->video.completed_requests.empty()) {
+	while (!src->video.completed_requests.empty())
 		src->video.completed_requests.pop();
+
+	if (src->video_src.type == VIDEO_SOURCE_ENCODED) {
+		delete src->video.encoder;
+		src->video.encoder = nullptr;
 	}
 
-	src->video.requests.clear();
+	/*
+	 * We need to reinitialise this here, as if the user selected an
+	 * unsupported MJPEG format the encoding routine will have overriden
+	 * this setting.
+	 */
+	src->video_src.type = VIDEO_SOURCE_DMABUF;
+
 	return 0;
 }
+
+
 
 static int libcamera_source_alloc_buffers(struct video_source *s, unsigned int nbufs)
 {
 	struct libcamera_source *src = to_libcamera_source(s);
+	StreamConfiguration &streamConfig = src->config->at(0);
 	int ret;
 
-	StreamConfiguration &videoConfig = src->config->at(0);
-	videoConfig.bufferCount = nbufs;
-
-	if(src->camera->configure(src->config.get()) < 0) {
-		std::cerr << "Failed to configure camera" << std::endl;
-		return -EINVAL;
-	}
-
-	src->video.stream = videoConfig.stream();
-
-	src->video.allocator = new FrameBufferAllocator(src->camera);
-	ret = src->video.allocator->allocate(src->video.stream);
-	if (ret < 0) {
-		std::cerr << "Failed to allocate video buffers: " << std::endl;
-		delete src->video.allocator;
-		src->video.allocator = nullptr;
+	streamConfig.bufferCount = nbufs;
+	ret = src->camera->configure(src->config.get());
+	if (ret) {
+		std::cerr << "failed to configure the camera" << std::endl;
 		return ret;
 	}
 
-	const auto &video_buffers = src->video.allocator->buffers(src->video.stream);
-	if (src->video_src.type == VIDEO_SOURCE_ENCODED) {
-		for (const auto &buffer : video_buffers) {
-			src->mapBuffer(buffer, false);
-		}
+	Stream *stream = src->config->at(0).stream();
+	FrameBufferAllocator *allocator;
+
+	allocator = new FrameBufferAllocator(src->camera);
+
+	ret = allocator->allocate(stream);
+	if (ret < 0) {
+		std::cerr << "failed to allocate buffers" << std::endl;
+		return ret;
 	}
 
-	src->video.buffers.nbufs = video_buffers.size();
-	src->video.buffers.buffers = (struct video_buffer *)calloc(
-		src->video.buffers.nbufs, sizeof(struct video_buffer));
+	src->video.allocator = allocator;
+
+	const std::vector<std::unique_ptr<FrameBuffer>> &buffers = allocator->buffers(stream);
+	src->video.buffers.nbufs = buffers.size();
+
+	if (src->video_src.type == VIDEO_SOURCE_ENCODED) {
+		for (const std::unique_ptr<FrameBuffer> &buffer : buffers)
+			src->mapBuffer(buffer, false);
+	}
+
+	src->video.buffers.buffers = (video_buffer *)calloc(src->video.buffers.nbufs, sizeof(*src->video.buffers.buffers));
 	if (!src->video.buffers.buffers) {
-		std::cerr << "Failed to allocate video buffer structures" << std::endl;
+		std::cerr << "failed to allocate buffers" << std::endl;
 		return -ENOMEM;
 	}
 
-	for (unsigned int i = 0; i < video_buffers.size(); i++) {
+	for (unsigned int i = 0; i < buffers.size(); ++i) {
 		src->video.buffers.buffers[i].index = i;
 		src->video.buffers.buffers[i].dmabuf = -1;
 	}
 
-	if(src->still.stream) {
+
+	if(src->config->at(1).stream()) {
 		src->still.allocator = new FrameBufferAllocator(src->camera);
-		ret = src->still.allocator->allocate(src->still.stream);
+		ret = src->still.allocator->allocate(src->config->at(1).stream());
 		if (ret < 0) {
 			std::cerr << "Failed to allocate still buffers: " << std::endl;
 			delete src->still.allocator;
@@ -571,13 +601,14 @@ static int libcamera_source_alloc_buffers(struct video_source *s, unsigned int n
 			return ret;
 		}
 
-		const auto &still_buffers = src->still.allocator->buffers(src->still.stream);
+		const auto &still_buffers = src->still.allocator->buffers(src->config->at(1).stream());
 		for (const auto &buffer : still_buffers) {
 			src->mapBuffer(buffer, true);
 		}
 	}
 
-	return 0;
+
+	return ret;
 }
 
 static const struct video_source_ops libcamera_source_video_ops = {
@@ -608,104 +639,142 @@ static const struct still_source_ops libcamera_source_still_ops = {
 	.get_buffer = nullptr,
 };
 
+std::string cameraName(Camera *camera)
+{
+	const ControlList &props = camera->properties();
+	std::string name;
+
+	const auto &location = props.get(properties::Location);
+	if (location) {
+		switch (*location) {
+		case properties::CameraLocationFront:
+			name = "Internal Front Camera";
+			break;
+		case properties::CameraLocationBack:
+			name = "Internal back camera";
+			break;
+		case properties::CameraLocationExternal:
+			name = "External camera";
+			const auto &model = props.get(properties::Model);
+			if (model)
+				name = *model;
+			break;
+		}
+	}
+	name += " (" + camera->id() + ")";
+
+	return name;
+}
+
+
 struct video_source *libcamera_source_create(const char *devname)
 {
-	if (!devname) return nullptr;
+	struct libcamera_source *src;
+	int ret;
 
-	auto *src = new libcamera_source();
-	src->streaming = false;
+	if (!devname) {
+		std::cerr << "No camera identifier was passed" << std::endl;
+		return NULL;
+	}
 
-	if (pipe2(src->pfds, O_NONBLOCK) < 0) {
-		std::cerr << "Failed to create pipe: " << strerror(errno) << std::endl;
-		delete src;
-		return nullptr;
+	src = new libcamera_source;
+
+	/*
+	 * Event handling in libuvcgadget currently depends on select(), but
+	 * unlike a V4L2 devnode there's no file descriptor for completed
+	 * libcamera Requests. We'll spoof the events using a pipe for now,
+	 * but...
+	 *
+	 * TODO: Replace event handling with libevent
+	 */
+
+	ret = pipe2(src->pfds, O_NONBLOCK);
+	if (ret) {
+		std::cerr << "failed to create pipe" << std::endl;
+		goto err_free_src;
 	}
 
 	src->video_src.ops = &libcamera_source_video_ops;
 	src->video_src.type = VIDEO_SOURCE_DMABUF;
-	src->still_src.ops = &libcamera_source_still_ops;
 
 	src->cm = std::make_unique<CameraManager>();
-	int ret = src->cm->start();
+	src->cm->start();
 
-	if (ret < 0 || src->cm->cameras().empty()) {
-		delete src;
-		return nullptr;
+	if (src->cm->cameras().empty()) {
+		std::cout << "No cameras were identified on the system" << std::endl;
+		goto err_close_pipe;
 	}
 
+	/* TODO: make a separate way to list libcamera cameras */
+	for (auto const &camera : src->cm->cameras())
+		printf("- %s\n", cameraName(camera.get()).c_str());
+
+	/*
+	 * Camera selection is by ID or index. Camera ID's start with a slash.
+	 * If the first character is a digit, assume we're indexing, otherwise
+	 * treat it as an ID.
+	 */
 	if (std::isdigit(devname[0])) {
 		unsigned long index = std::atoi(devname);
 
 		if (index >= src->cm->cameras().size()) {
-			std::cerr << "Camera index out of range" << std::endl;
-			delete src;
-			return nullptr;
+			std::cerr << "No camera at index " << index << std::endl;
+			goto err_close_pipe;
 		}
 
 		src->camera = src->cm->cameras()[index];
-		if (!src->camera) {
-			std::cerr << "Failed to get camera at index " << index << std::endl;
-			delete src;
-			return nullptr;
-		}
 	} else {
-		src->camera = src->cm->get(devname);
+		src->camera = src->cm->get(std::string(devname));
 		if (!src->camera) {
-			std::cerr << "Camera '" << devname << "' not found" << std::endl;
-			std::cerr << "Available cameras:" << std::endl;
-			for (const auto &cam : src->cm->cameras()) {
-				std::cerr << "  - " << cam->id() << std::endl;
-			}
-			delete src;
-			return nullptr;
+			std::cerr << "found no camera matching " << devname << std::endl;
+			goto err_close_pipe;
 		}
 	}
 
 	ret = src->camera->acquire();
-	if (ret < 0) {
-		std::cerr << "Failed to acquire camera" << std::endl;
-		delete src;
-		return nullptr;
+	if (ret) {
+		fprintf(stderr, "failed to acquire camera\n");
+		goto err_close_pipe;
 	}
 
-	src->config = src->camera->generateConfiguration(
-		{StreamRole::VideoRecording, StreamRole::StillCapture});
-	
-	if (src->config) {
-		StreamConfiguration &stillConfig = src->config->at(1);
-		stillConfig.pixelFormat = PixelFormat(V4L2_PIX_FMT_SRGGB12);
-		stillConfig.size.width = 4056;
-		stillConfig.size.height = 3040;
-		stillConfig.bufferCount = 1;
-		
-		if (src->config->validate() == CameraConfiguration::Invalid) {
-			std::cout << "Dual stream config invalid, falling back to video only" << std::endl;
-			src->config = nullptr;
-		} else {
-			src->still.stream = stillConfig.stream();
-		}
-	}
-	
+	std::cout << "Using camera " << cameraName(src->camera.get()) << std::endl;
+
+	src->config =
+		src->camera->generateConfiguration( { StreamRole::VideoRecording, StreamRole::StillCapture });
 	if (!src->config) {
-		src->config = src->camera->generateConfiguration(
-			{StreamRole::VideoRecording});
-		if (!src->config) {
-			std::cerr << "Failed to generate camera configuration" << std::endl;
-			src->camera->release();
-			delete src;
-			return nullptr;
-		}
+		std::cerr << "failed to generate camera config" << std::endl;
+		goto err_release_camera;
 	}
-
+	
 	src->camera->requestCompleted.connect(src, &libcamera_source::requestComplete);
 
-	const ControlInfoMap &infoMap = src->camera->controls();
-	if (infoMap.find(&controls::AfMode) != infoMap.end()) {
-		src->controls.set(controls::AfMode, controls::AfModeContinuous);
+	{
+		/*
+		 * We enable AutoFocus by default if it's supported by the camera.
+		 * Keep the infoMap scoped to calm the compiler worrying about
+		 * jumping over the reference with the gotos.
+		 */
+		const ControlInfoMap &infoMap = src->camera->controls();
+		if (infoMap.find(&controls::AfMode) != infoMap.end()) {
+			std::cout << "Enabling continuous auto-focus" << std::endl;
+			src->controls.set(controls::AfMode, controls::AfModeContinuous);
+		}
 	}
 
 	return &src->video_src;
+
+err_release_camera:
+	src->camera->release();
+err_close_pipe:
+	close(src->pfds[0]);
+	close(src->pfds[1]);
+	src->cm->stop();
+err_free_src:
+	delete src;
+
+	return NULL;
 }
+
 
 void libcamera_source_init(struct video_source *s, struct events *events)
 {
