@@ -186,9 +186,10 @@ int libcamera_source::captureStill()
     } else {
        
 	*/
-        printf("Warning: No metadata from video stream yet. Falling back to enabling AE/AWB.\n");
-        request->controls().set(controls::AeEnable, true);
-        request->controls().set(controls::AwbEnable, true);
+    request->controls().set(controls::AeEnable, false);
+    request->controls().set(controls::AwbEnable, false); // AWB'yi de kapatalım, renkler garip çıkabilir ama parlaklık önemli
+    request->controls().set(controls::ExposureTime, manual_exposure);
+    request->controls().set(controls::AnalogueGain, manual_gain);
     //}
 
 	FrameBuffer *buffer_to_use = still.mapped_buffers_.begin()->first;
