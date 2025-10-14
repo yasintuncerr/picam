@@ -192,9 +192,9 @@ int libcamera_source::captureStill()
     request->controls().set(controls::AwbEnable, true); // Renkler için AWB algoritması çalışsın.
 
     // 2. Yüksek pozlama, yüksek analog ve dijital kazanç değerleri belirle.
-    int64_t manual_exposure = 10000; // 0.5 saniye
-    float manual_analogue_gain = 8.0f;
-    float manual_digital_gain = 2.0f; // Dijital kazancı da devreye sokuyoruz.
+    //int64_t manual_exposure = 10000; // 0.5 saniye
+    //float manual_analogue_gain = 8.0f;
+    //float manual_digital_gain = 2.0f; // Dijital kazancı da devreye sokuyoruz.
 
     // 3. Video akışının frame rate limitini bu tek kare için EZ.
     //    Maksimum 2 saniyeye kadar pozlamaya izin ver.
