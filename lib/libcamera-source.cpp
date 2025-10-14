@@ -188,7 +188,7 @@ int libcamera_source::captureStill()
 	*/
 
 	int64_t manual_exposure = 500000;
-    float manual_gain = 20.0f;
+    float manual_gain = 4.0f;
 
     printf("!!! FORCING MANUAL CONTROLS FOR TEST !!!\n");
     printf("  - Manual Exposure: %lldus, Manual Gain: %.2f\n", (long long)manual_exposure, manual_gain);
