@@ -187,21 +187,29 @@ int libcamera_source::captureStill()
        
 	*/
 
-	int64_t manual_exposure = 500000;
-    float manual_gain = 4.0f;
-
-    printf("!!! FORCING MANUAL CONTROLS FOR TEST !!!\n");
-    printf("  - Manual Exposure: %lldus, Manual Gain: %.2f\n", (long long)manual_exposure, manual_gain);
-
-    // Otomatik algoritmaları kapatıp manuel değerleri set et
+	// 1. Manuel pozlama moduna geç, OTOMATİK BEYAZ DENGESİNİ AÇIK BIRAK.
     request->controls().set(controls::AeEnable, false);
-    request->controls().set(controls::AwbEnable, false); // AWB'yi de kapatalım, renkler garip çıkabilir ama parlaklık önemli
-    libcamera::Span<const int64_t, 2> frame_duration_limits({0, 1000000});
+    request->controls().set(controls::AwbEnable, true); // Renkler için AWB algoritması çalışsın.
+
+    // 2. Yüksek pozlama, yüksek analog ve dijital kazanç değerleri belirle.
+    int64_t manual_exposure = 500000; // 0.5 saniye
+    float manual_analogue_gain = 8.0f;
+    float manual_digital_gain = 2.0f; // Dijital kazancı da devreye sokuyoruz.
+
+    // 3. Video akışının frame rate limitini bu tek kare için EZ.
+    //    Maksimum 2 saniyeye kadar pozlamaya izin ver.
+    libcamera::Span<const int64_t, 2> frame_duration_limits({0, 2000000});
     request->controls().set(controls::FrameDurationLimits, frame_duration_limits);
 
-    // 4. Manuel pozlama ve kazanç değerlerimizi set et.
+    // 4. Tüm manuel ayarlarımızı isteğe ekle.
     request->controls().set(controls::ExposureTime, manual_exposure);
-    request->controls().set(controls::AnalogueGain, manual_gain);
+    request->controls().set(controls::AnalogueGain, manual_analogue_gain);
+    request->controls().set(controls::DigitalGain, manual_digital_gain);
+
+    printf(">>> FINAL ATTEMPT: Manual Exposure/Gain + AWB + FrameDuration Override <<<\n");
+    printf("  - Target Exposure: %ldus\n", manual_exposure);
+    printf("  - Target AnalogueGain: %.2f\n", manual_analogue_gain);
+    printf("  - Target DigitalGain: %.2f\n", manual_digital_gain);
 
     //}
 
