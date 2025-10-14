@@ -163,7 +163,7 @@ int libcamera_source::captureStill()
 		return -ENOMEM;
 	}
 
-	if (this->video.latest_exposure_time > 0 && this->video.latest_analogue_gain > 0.0f) {
+	/*if (this->video.latest_exposure_time > 0 && this->video.latest_analogue_gain > 0.0f) {
         printf("Applying controls from running stream: Exposure %lldus, Gain %.2f\n",
        										(long long)this->video.latest_exposure_time,
        										this->video.latest_analogue_gain);
@@ -172,11 +172,11 @@ int libcamera_source::captureStill()
         request->controls().set(controls::AnalogueGain, this->video.latest_analogue_gain);
     } else {
        
-
+	*/
         printf("Warning: No metadata from video stream yet. Falling back to enabling AE/AWB.\n");
         request->controls().set(controls::AeEnable, true);
         request->controls().set(controls::AwbEnable, true);
-    }
+    //}
 
 	FrameBuffer *buffer_to_use = still.mapped_buffers_.begin()->first;
 	Stream *stream = config->at(1).stream();
