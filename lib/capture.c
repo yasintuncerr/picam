@@ -12,18 +12,20 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include <stdbool.h>
-#include <tiffio.h> 
+#include <stdint.h> // uint32_t için eklendi
+#include <tiffio.h>
+#include <linux/videodev2.h> // v4l2_fourcc için eklendi
 
 #include "capture.h"
 #include "still-source.h"
 
-// libcamera C++ interface
+// libcamera C++ arayüzü
 extern struct still_source *libcamera_get_still_source(struct video_source *s);
 extern void libcamera_still_source_set_callback(struct still_source *ssrc,
                                                 void (*cb)(void *, struct still_buffer *),
                                                 void *data);
 
-// Memory buffer for TIFF writing
+// Bellek içi TIFF işlemleri için özel yapı
 typedef struct {
     uint8_t *data;
     tsize_t size;
@@ -54,15 +56,14 @@ static int send_all(int fd, const void *buf, size_t len) {
     return 0;
 }
 
-
+// libtiff için bellek içi yazma işlemi
 static tsize_t tiffWriteProc(thandle_t fd, tdata_t buf, tsize_t size) {
     TiffBuffer* buffer = (TiffBuffer*)fd;
     if (buffer->pos + size > buffer->capacity) {
-        // Resize the memory buffer
         tsize_t new_capacity = (buffer->pos + size) * 2;
         uint8_t *new_data = (uint8_t*)realloc(buffer->data, new_capacity);
         if (!new_data) {
-            return 0; // Error
+            return 0;
         }
         buffer->data = new_data;
         buffer->capacity = new_capacity;
@@ -80,7 +81,6 @@ static tsize_t tiffReadProc(thandle_t fd, tdata_t buf, tsize_t size) {
     return 0;
 }
 
-// Memory buffer for TIFF seeking
 static toff_t tiffSeekProc(thandle_t fd, toff_t off, int whence) {
     TiffBuffer* buffer = (TiffBuffer*)fd;
     toff_t new_pos = buffer->pos;
@@ -89,20 +89,18 @@ static toff_t tiffSeekProc(thandle_t fd, toff_t off, int whence) {
     else if (whence == SEEK_CUR) new_pos += off;
     else if (whence == SEEK_END) new_pos = buffer->size + off;
 
-    if (new_pos > buffer->size) {
+    if (new_pos > (toff_t)buffer->size) { // Tip dönüşümü eklendi
         return (toff_t)-1;
     }
     buffer->pos = new_pos;
     return buffer->pos;
 }
 
-// Memory buffer for TIFF closing (no-op)
 static int tiffCloseProc(thandle_t fd) {
     (void)fd;
     return 0;
 }
 
-// Memory buffer for TIFF size retrieval
 static toff_t tiffSizeProc(thandle_t fd) {
     TiffBuffer* buffer = (TiffBuffer*)fd;
     return buffer->size;
@@ -110,7 +108,7 @@ static toff_t tiffSizeProc(thandle_t fd) {
 
 static void* convert_raw_to_tiff_memory(struct still_buffer* raw_buffer, tsize_t* tiff_size) {
     TiffBuffer tiff_buffer;
-    tiff_buffer.capacity = raw_buffer->bytesused * 1.5; // Initial estimate
+    tiff_buffer.capacity = raw_buffer->bytesused * 1.5;
     tiff_buffer.data = (uint8_t*)malloc(tiff_buffer.capacity);
     if (!tiff_buffer.data) return NULL;
     tiff_buffer.pos = 0;
@@ -128,10 +126,7 @@ static void* convert_raw_to_tiff_memory(struct still_buffer* raw_buffer, tsize_t
     uint16_t samplesPerPixel = 1;
     uint16_t photometric = PHOTOMETRIC_MINISBLACK;
 
-    // Gelen format SRGGB12 ise, bu bir Bayer formatıdır.
-    // TIFF'te bunu bir Renk Filtre Dizisi (CFA) olarak işaretleyebiliriz.
-    // Piksel formatı V4L2_PIX_FMT_SRGGB12'dir.
-    if (raw_buffer->pixelformat == v4l2_fourcc('B', 'A', '1', '2')) {
+    if (raw_buffer->pixelformat == (uint32_t)v4l2_fourcc('B', 'A', '1', '2')) { // Tip dönüşümü eklendi
         photometric = PHOTOMETRIC_CFA;
     }
 
@@ -143,10 +138,10 @@ static void* convert_raw_to_tiff_memory(struct still_buffer* raw_buffer, tsize_t
     TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
     TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, photometric);
     TIFFSetField(tif, TIFFTAG_COMPRESSION, COMPRESSION_NONE);
-    TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, TIFFDefaultStripSize(tif, (uint32)-1));
+    TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, TIFFDefaultStripSize(tif, (uint32_t)-1)); // uint32 -> uint32_t
 
     tsize_t line_bytes = TIFFScanlineSize(tif);
-    for (uint32 row = 0; row < raw_buffer->height; ++row) {
+    for (uint32_t row = 0; row < raw_buffer->height; ++row) { // uint32 -> uint32_t
         if (TIFFWriteScanline(tif, (uint8_t*)raw_buffer->mem + row * line_bytes, row, 0) < 0) {
             TIFFClose(tif);
             free(tiff_buffer.data);
@@ -158,7 +153,6 @@ static void* convert_raw_to_tiff_memory(struct still_buffer* raw_buffer, tsize_t
     *tiff_size = tiff_buffer.size;
     return tiff_buffer.data;
 }
-
 
 static void still_capture_ready_cb(void *data, struct still_buffer *buffer_from_camera) {
     struct http_client_session *session = (struct http_client_session *)data;
@@ -301,7 +295,7 @@ static void *http_server_thread(void *arg) {
 }
 
 struct http_server *http_capture_new(int port, struct video_source *video_src) {
-    struct http_server *server = (http_server*)calloc(1, sizeof(struct http_server));
+    struct http_server *server = (struct http_server*)calloc(1, sizeof(struct http_server)); // Düzeltildi
     if (!server) {
         perror("malloc for server");
         return NULL;
