@@ -329,7 +329,7 @@ static void libcamera_source_still_process(libcamera_source *src)
     Request *request = src->still.completed_requests.front();
     src->still.completed_requests.pop();
 
-    struct still_buffer buffer = {0}; // Initialize buffer to zero
+    struct still_buffer buffer = {}; // Initialize buffer to zero
 
     // Call the new helper function to do all the work
     populate_still_buffer_from_request(request, &buffer, src);
