@@ -32,7 +32,7 @@ extern "C" {
 #include "video-buffers.h"
 #include "still-source.h"
 }
-#include <libcamera/apps/common/dng_writer.h>
+#include "dng-writer.h"
 
 
 using namespace libcamera;
