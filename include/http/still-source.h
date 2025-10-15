@@ -28,21 +28,20 @@ struct still_source_ops {
 };
 
 struct still_buffer {
+    // Core buffer info
     unsigned int size;
     unsigned int bytesused;
     struct timeval timestamp;
     bool error;
     void *mem;
+
+    // Essential image geometry info
     unsigned int width;
     unsigned int height;
+    unsigned int stride; // Critical for correct image interpretation
     uint32_t pixelformat;
-    unsigned int bit_depth;
-
-    unsigned int black_level[4];
-    unsigned int white_level;
-    float white_balance_gains[3];
-    float color_correction_matrix[9];
 };
+
 
 
 struct still_source {
