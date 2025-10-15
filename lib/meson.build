@@ -25,9 +25,12 @@ if libcamera.found() and libjpeg.found() and threads.found()
   libuvcgadget_sources += files(['mjpeg_encoder.cpp'])
 endif
 
+# Add libtiff dependency
+libtiff = dependency('libtiff-4', required : true)
+
 libuvcgadget = shared_library('uvcgadget',
                               libuvcgadget_sources,
-                              dependencies : [libcamera, libjpeg, threads],
+                              dependencies : [libcamera, libjpeg, threads, libtiff],
                               version : uvc_gadget_version,
                               install : true,
                               include_directories : [includes, config_includes])
@@ -44,3 +47,4 @@ pkg_mod.generate(libuvcgadget,
                  subdirs : 'uvcgadget')
 
 meson.override_dependency('uvcgadget', libuvcgadget_dep)
+yasin@192 Downloads % 
