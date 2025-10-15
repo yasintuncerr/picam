@@ -64,10 +64,16 @@ static tsize_t tiffWriteProc(thandle_t fd, tdata_t buf, tsize_t size) {
 static toff_t tiffSeekProc(thandle_t fd, toff_t off, int whence) {
     TiffMemoryBuffer* buffer = (TiffMemoryBuffer*)fd;
     toff_t new_pos = buffer->pos;
-    if (whence == SEEK_SET) new_pos = off;
+
+    if (whence == SEEK_SET)      new_pos = off;
     else if (whence == SEEK_CUR) new_pos += off;
     else if (whence == SEEK_END) new_pos = buffer->size + off;
-    if (new_pos > (toff_t)buffer->size) return (toff_t)-1;
+
+    // The restrictive check is now removed. We only check against capacity.
+    if (new_pos < 0 || new_pos > (toff_t)buffer->capacity) {
+        return (toff_t)-1;
+    }
+
     buffer->pos = new_pos;
     return buffer->pos;
 }
@@ -95,8 +101,9 @@ static void* convert_raw_to_dng_memory(const struct still_buffer* raw_buffer, ts
         free(tiff_buffer.data);
         return NULL;
     }
-    
-    // Set standard DNG and TIFF tags from the buffer's metadata
+
+    // --- Start of DNG Tag Configuration ---
+
     TIFFSetField(tif, TIFFTAG_SUBFILETYPE, 0);
     TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, raw_buffer->width);
     TIFFSetField(tif, TIFFTAG_IMAGELENGTH, raw_buffer->height);
@@ -111,17 +118,19 @@ static void* convert_raw_to_dng_memory(const struct still_buffer* raw_buffer, ts
 
     uint16_t dng_version[] = {1, 4, 0, 0};
     TIFFSetField(tif, TIFFTAG_DNGVERSION, dng_version);
-    
+
+    // FIX 1: Make the pixel format check more robust using the hex value from logs
     uint16_t cfa_pattern[4] = {0, 1, 1, 2}; // Default RGGB
-    if (raw_buffer->pixelformat == v4l2_fourcc('B', 'G', '1', '2')) { // BGGR
+    if (raw_buffer->pixelformat == 0x32314742) { // This is 'BG12' from your log
+        // BGGR Pattern: 2=B, 1=G, 0=R -> [2, 1, 1, 0]
         cfa_pattern[0] = 2; cfa_pattern[1] = 1; cfa_pattern[2] = 1; cfa_pattern[3] = 0;
     }
     TIFFSetField(tif, TIFFTAG_CFAPATTERN, 4, cfa_pattern);
-    
+
     uint32_t black_levels[4];
     for(int i = 0; i < 4; ++i) black_levels[i] = raw_buffer->black_level[i];
     TIFFSetField(tif, TIFFTAG_BLACKLEVEL, 4, black_levels);
-    
+
     uint32_t white_level[] = {raw_buffer->white_level};
     TIFFSetField(tif, TIFFTAG_WHITELEVEL, 1, white_level);
 
@@ -140,7 +149,9 @@ static void* convert_raw_to_dng_memory(const struct still_buffer* raw_buffer, ts
         return NULL;
     }
 
+    // This call finalizes the directory and is where the original error occurred.
     TIFFClose(tif);
+    
     *dng_size = tiff_buffer.size;
     return tiff_buffer.data;
 }
