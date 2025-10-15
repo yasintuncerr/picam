@@ -265,48 +265,79 @@ static void libcamera_source_video_process(libcamera_source *src)
 }
 
 
+/**
+ * @brief Populates a still_buffer struct with all necessary geometry and color metadata from a completed request.
+ * @param request The completed libcamera::Request object.
+ * @param buffer A pointer to the still_buffer struct to be filled.
+ * @param src A pointer to the libcamera_source to access mapped buffers.
+ */
+static void populate_still_buffer_from_request(Request *request, struct still_buffer *buffer, libcamera_source *src)
+{
+    FrameBuffer *fb = request->buffers().begin()->second;
+    Stream *stream = src->config->at(1).stream(); // Still stream
+    const ControlList &metadata = request->metadata();
+    const StreamConfiguration &cfg = stream->configuration();
+
+    // --- Essential Geometry and Buffer Info ---
+    buffer->error = false;
+    buffer->timestamp.tv_sec = fb->metadata().timestamp / 1000000;
+    buffer->timestamp.tv_usec = fb->metadata().timestamp % 1000000;
+    buffer->bytesused = fb->metadata().planes()[0].bytesused;
+    buffer->width = cfg.size.width;
+    buffer->height = cfg.size.height;
+    buffer->stride = cfg.stride; // The CRITICAL stride value
+    buffer->pixelformat = cfg.pixelFormat.fourcc();
+    
+    // Get the memory pointer
+    auto span = src->still.mapped_buffers_.find(fb);
+    buffer->mem = (span != src->still.mapped_buffers_.end()) ? span->second.data() : nullptr;
+
+    // --- Essential RAW Color Metadata ---
+    buffer->bit_depth = 12; // Assuming 12 for SBGGR12
+    buffer->white_level = (1 << buffer->bit_depth) - 1;
+
+    auto blackLevels = metadata.get<Span<const int32_t, 4>>(controls::SensorBlackLevels);
+    if (blackLevels) {
+        for(size_t i = 0; i < 4; ++i) buffer->black_level[i] = (*blackLevels)[i];
+    }
+
+    auto wb_gains = metadata.get<Span<const float, 2>>(controls::ColourGains);
+    if (wb_gains) {
+        buffer->white_balance_gains[0] = (*wb_gains)[0]; 
+        buffer->white_balance_gains[1] = 1.0f;           
+        buffer->white_balance_gains[2] = (*wb_gains)[1]; 
+    }
+
+    auto ccm = metadata.get<Span<const float, 9>>(controls::ColourCorrectionMatrix);
+    if (ccm) {
+        for(size_t i = 0; i < 9; ++i) buffer->color_correction_matrix[i] = (*ccm)[i];
+    } else {
+        // Provide a default identity matrix if none is available
+        static const float identity_matrix[9] = { 1,0,0, 0,1,0, 0,0,1 };
+        memcpy(buffer->color_correction_matrix, identity_matrix, sizeof(identity_matrix));
+    }
+}
+
+
+// 2. libcamera-source.cpp dosyanızdaki mevcut libcamera_source_still_process fonksiyonunu bu basitleştirilmiş versiyonla değiştirin.
+
 static void libcamera_source_still_process(libcamera_source *src)
 {
-    if (src->still.completed_requests.empty())
+    if(src->still.completed_requests.empty())
         return;
 
     Request *request = src->still.completed_requests.front();
     src->still.completed_requests.pop();
 
-    FrameBuffer *fb = request->buffers().begin()->second;
-    Stream *stream = src->config->at(1).stream(); // Still stream
+    struct still_buffer buffer = {0}; // Initialize buffer to zero
 
-    struct still_buffer buffer;
+    // Call the new helper function to do all the work
+    populate_still_buffer_from_request(request, &buffer, src);
 
-    // --- Fill the essential buffer info ---
-    buffer.size = fb->planes()[0].length;
-    buffer.bytesused = fb->metadata().planes()[0].bytesused;
-    buffer.timestamp.tv_sec = fb->metadata().timestamp / 1000000;
-    buffer.timestamp.tv_usec = fb->metadata().timestamp % 1000000;
-    buffer.error = false;
-
-    // Get the memory pointer
-    auto span = src->still.mapped_buffers_.find(fb);
-    if (span != src->still.mapped_buffers_.end()) {
-        buffer.mem = span->second.data();
-    } else {
-        buffer.mem = nullptr;
-    }
-
-    // Get image geometry from the stream configuration
-    const StreamConfiguration &cfg = stream->configuration();
-    buffer.width = cfg.size.width;
-    buffer.height = cfg.size.height;
-    buffer.stride = cfg.stride; // The most critical piece of info
-    buffer.pixelformat = cfg.pixelFormat.fourcc();
-
-    // The old metadata reading code for black levels, white balance, etc., is now completely removed.
-
-    // Call the callback function to pass the processed buffer
+    // Pass the fully populated buffer to the C-side callback
     if (src->still.capture_ready_cb)
         src->still.capture_ready_cb(src->still.capture_ready_data, &buffer);
 
-    // Cleanup
     src->still.capture_in_progress = false;
     delete request; 
 }
