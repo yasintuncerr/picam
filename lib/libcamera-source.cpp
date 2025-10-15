@@ -135,8 +135,6 @@ void libcamera_source::requestComplete(Request *request)
 		write(pfds[1], "v", 1);
 	} else if (is_still) {
 
-		request->controls().set(controls::AeEnable, true);
-    	request->controls().set(controls::AwbEnable, true);
 		still.completed_requests.push(request);
 		printf("Video Exposure: %lldus, Gain: %.2f\n",
 			  (long long)this->video.latest_exposure_time,
@@ -175,7 +173,9 @@ int libcamera_source::captureStill()
 	if (!request) {
 		return -ENOMEM;
 	}
-
+	request->controls().set(controls::AeEnable, true);
+    request->controls().set(controls::AwbEnable, true);
+		
 	FrameBuffer *buffer_to_use = still.mapped_buffers_.begin()->first;
 	Stream *stream = config->at(1).stream();
 	int ret = request->addBuffer(stream, buffer_to_use);
