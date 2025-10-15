@@ -12,9 +12,9 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include <stdbool.h>
-#include <stdint.h> // uint32_t için eklendi
+#include <stdint.h>
 #include <tiffio.h>
-#include <linux/videodev2.h> // v4l2_fourcc için eklendi
+#include <linux/videodev2.h>
 
 #include "capture.h"
 #include "still-source.h"
@@ -39,9 +39,6 @@ static void *http_server_thread(void *arg);
 static void still_capture_ready_cb(void *data, struct still_buffer *buffer);
 static void* convert_raw_to_tiff_memory(struct still_buffer* raw_buffer, tsize_t* tiff_size);
 
-/**
- * @brief Sends all data in a buffer over a socket, handling partial writes.
- */
 static int send_all(int fd, const void *buf, size_t len) {
     const char *ptr = (const char *)buf;
     while (len > 0) {
@@ -56,30 +53,22 @@ static int send_all(int fd, const void *buf, size_t len) {
     return 0;
 }
 
-// libtiff için bellek içi yazma işlemi
 static tsize_t tiffWriteProc(thandle_t fd, tdata_t buf, tsize_t size) {
     TiffBuffer* buffer = (TiffBuffer*)fd;
     if (buffer->pos + size > buffer->capacity) {
         tsize_t new_capacity = (buffer->pos + size) * 2;
         uint8_t *new_data = (uint8_t*)realloc(buffer->data, new_capacity);
-        if (!new_data) {
-            return 0;
-        }
+        if (!new_data) return 0;
         buffer->data = new_data;
         buffer->capacity = new_capacity;
     }
     memcpy(buffer->data + buffer->pos, buf, size);
     buffer->pos += size;
-    if (buffer->pos > buffer->size) {
-        buffer->size = buffer->pos;
-    }
+    if (buffer->pos > buffer->size) buffer->size = buffer->pos;
     return size;
 }
 
-static tsize_t tiffReadProc(thandle_t fd, tdata_t buf, tsize_t size) {
-    (void)fd; (void)buf; (void)size;
-    return 0;
-}
+static tsize_t tiffReadProc(thandle_t fd, tdata_t buf, tsize_t size) { (void)fd; (void)buf; (void)size; return 0; }
 
 static toff_t tiffSeekProc(thandle_t fd, toff_t off, int whence) {
     TiffBuffer* buffer = (TiffBuffer*)fd;
@@ -89,26 +78,17 @@ static toff_t tiffSeekProc(thandle_t fd, toff_t off, int whence) {
     else if (whence == SEEK_CUR) new_pos += off;
     else if (whence == SEEK_END) new_pos = buffer->size + off;
 
-    if (new_pos > (toff_t)buffer->size) { // Tip dönüşümü eklendi
-        return (toff_t)-1;
-    }
+    if (new_pos > (toff_t)buffer->size) return (toff_t)-1;
     buffer->pos = new_pos;
     return buffer->pos;
 }
 
-static int tiffCloseProc(thandle_t fd) {
-    (void)fd;
-    return 0;
-}
-
-static toff_t tiffSizeProc(thandle_t fd) {
-    TiffBuffer* buffer = (TiffBuffer*)fd;
-    return buffer->size;
-}
+static int tiffCloseProc(thandle_t fd) { (void)fd; return 0; }
+static toff_t tiffSizeProc(thandle_t fd) { TiffBuffer* buffer = (TiffBuffer*)fd; return buffer->size; }
 
 static void* convert_raw_to_tiff_memory(struct still_buffer* raw_buffer, tsize_t* tiff_size) {
     TiffBuffer tiff_buffer;
-    tiff_buffer.capacity = raw_buffer->bytesused * 1.5;
+    tiff_buffer.capacity = raw_buffer->bytesused + 4096; // Veri + TIFF başlıkları için pay
     tiff_buffer.data = (uint8_t*)malloc(tiff_buffer.capacity);
     if (!tiff_buffer.data) return NULL;
     tiff_buffer.pos = 0;
@@ -122,31 +102,26 @@ static void* convert_raw_to_tiff_memory(struct still_buffer* raw_buffer, tsize_t
         return NULL;
     }
 
-    uint16_t bitsPerSample = 12;
-    uint16_t samplesPerPixel = 1;
-    uint16_t photometric = PHOTOMETRIC_MINISBLACK;
-
-    if (raw_buffer->pixelformat == (uint32_t)v4l2_fourcc('B', 'A', '1', '2')) { // Tip dönüşümü eklendi
-        photometric = PHOTOMETRIC_CFA;
-    }
-
+    // Gerekli TIFF ve DNG etiketlerini ayarla
     TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, raw_buffer->width);
     TIFFSetField(tif, TIFFTAG_IMAGELENGTH, raw_buffer->height);
-    TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, samplesPerPixel);
-    TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, bitsPerSample);
-    TIFFSetField(tif, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
-    TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
-    TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, photometric);
+    TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, 1);
+    TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, 12);
     TIFFSetField(tif, TIFFTAG_COMPRESSION, COMPRESSION_NONE);
-    TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, TIFFDefaultStripSize(tif, (uint32_t)-1)); // uint32 -> uint32_t
+    TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_CFA); // Renk Filtre Dizisi (Bayer)
+    TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
+    TIFFSetField(tif, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
 
-    tsize_t line_bytes = TIFFScanlineSize(tif);
-    for (uint32_t row = 0; row < raw_buffer->height; ++row) { // uint32 -> uint32_t
-        if (TIFFWriteScanline(tif, (uint8_t*)raw_buffer->mem + row * line_bytes, row, 0) < 0) {
-            TIFFClose(tif);
-            free(tiff_buffer.data);
-            return NULL;
-        }
+    // DNG için temel etiketler
+    uint16_t dng_version[] = {1, 4, 0, 0};
+    TIFFSetField(tif, TIFFTAG_DNGVERSION, dng_version);
+
+    // Veriyi tek bir şerit (strip) olarak yaz.
+    if (TIFFWriteRawStrip(tif, 0, raw_buffer->mem, raw_buffer->bytesused) < 0) {
+        fprintf(stderr, "TIFFWriteRawStrip failed\n");
+        TIFFClose(tif);
+        free(tiff_buffer.data);
+        return NULL;
     }
 
     TIFFClose(tif);
@@ -192,7 +167,6 @@ static void *client_thread_func(void *arg) {
         if (n < 0) perror("read");
         goto cleanup;
     }
-    printf("Request from fd %d:\n%.*s\n", session->fd, (int)strcspn(request_buf, "\r\n"), request_buf);
 
     if (strstr(request_buf, "GET /capture") == request_buf) {
         if (!session->server->still_src) {
@@ -214,20 +188,20 @@ static void *client_thread_func(void *arg) {
                     tiff_data = convert_raw_to_tiff_memory(&session->captured_data, &tiff_size);
 
                     if (tiff_data) {
-                        char header[256];
-                        int header_len = snprintf(header, sizeof(header),
+                        char http_header[256];
+                        int http_header_len = snprintf(http_header, sizeof(http_header),
                                                   "HTTP/1.1 200 OK\r\n"
-                                                  "Content-Type: image/tiff\r\n"
+                                                  "Content-Type: image/tiff\r\n" // Veya image/dng
                                                   "Content-Length: %zu\r\n\r\n",
                                                   (size_t)tiff_size);
 
-                        if (send_all(session->fd, header, header_len) == 0) {
+                        if (send_all(session->fd, http_header, http_header_len) == 0) {
                             if (send_all(session->fd, tiff_data, tiff_size) == 0) {
-                                printf("Sent TIFF image (%zu bytes) to fd %d\n", (size_t)tiff_size, session->fd);
+                                printf("Sent DNG/TIFF image (%zu bytes) to fd %d\n", (size_t)tiff_size, session->fd);
                             }
                         }
                     } else {
-                        const char *response = "HTTP/1.1 500 Internal Server Error\r\n\r\nFailed to convert to TIFF.";
+                        const char *response = "HTTP/1.1 500 Internal Server Error\r\n\r\nFailed to create TIFF file.";
                         write(session->fd, response, strlen(response));
                     }
                 } else {
@@ -245,12 +219,8 @@ static void *client_thread_func(void *arg) {
 cleanup:
     printf("Connection closed: fd %d\n", session->fd);
     close(session->fd);
-    if (session->buffer_data) {
-        free(session->buffer_data);
-    }
-    if (tiff_data) {
-        free(tiff_data);
-    }
+    if (session->buffer_data) free(session->buffer_data);
+    if (tiff_data) free(tiff_data);
     pthread_mutex_destroy(&session->mtx);
     pthread_cond_destroy(&session->cond);
     free(session);
@@ -295,7 +265,7 @@ static void *http_server_thread(void *arg) {
 }
 
 struct http_server *http_capture_new(int port, struct video_source *video_src) {
-    struct http_server *server = (struct http_server*)calloc(1, sizeof(struct http_server)); // Düzeltildi
+    struct http_server *server = (struct http_server*)calloc(1, sizeof(struct http_server));
     if (!server) {
         perror("malloc for server");
         return NULL;
