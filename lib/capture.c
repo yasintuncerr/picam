@@ -70,8 +70,14 @@ static toff_t tiffSeekProc(thandle_t fd, toff_t off, int whence) {
     buffer->pos = new_pos;
     return buffer->pos;
 }
-static tsize_t tiffReadProc(thandle_t fd, tdata_t buf, tsize_t size) { return 0; }
-static int tiffCloseProc(thandle_t fd) { return 0; }
+static tsize_t tiffReadProc(thandle_t fd, tdata_t buf, tsize_t size) {
+    (void)fd; (void)buf; (void)size;
+    return 0; 
+}
+static int tiffCloseProc(thandle_t fd) { 
+    (void)fd;
+    return 0;
+}
 static toff_t tiffSizeProc(thandle_t fd) { return ((TiffMemoryBuffer*)fd)->size; }
 
 // NEW HELPER: Creates a new, contiguous buffer by removing stride padding.
