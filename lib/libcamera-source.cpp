@@ -411,7 +411,7 @@ static int libcamera_source_video_set_format(struct video_source *s,
 
 	if (src->config) {
 		StreamConfiguration &stillConfig = src->config->at(1);
-		stillConfig.pixelFormat = PixelFormat::fromString("BGR888");
+		stillConfig.pixelFormat = PixelFormat::fromString("SBGGR12");
 		stillConfig.size.width = 4056;
 		stillConfig.size.height = 3040;
 		stillConfig.bufferCount = 1;
