@@ -39,6 +39,7 @@ static void *http_server_thread(void *arg);
 static void still_capture_ready_cb(void *data, struct still_buffer *buffer);
 static void* convert_raw_to_tiff_memory(struct still_buffer* raw_buffer, tsize_t* tiff_size);
 
+// --- send_all ve tiff*Proc fonksiyonları aynı kalıyor ---
 static int send_all(int fd, const void *buf, size_t len) {
     const char *ptr = (const char *)buf;
     while (len > 0) {
@@ -73,11 +74,9 @@ static tsize_t tiffReadProc(thandle_t fd, tdata_t buf, tsize_t size) { (void)fd;
 static toff_t tiffSeekProc(thandle_t fd, toff_t off, int whence) {
     TiffBuffer* buffer = (TiffBuffer*)fd;
     toff_t new_pos = buffer->pos;
-
-    if (whence == SEEK_SET)      new_pos = off;
+    if (whence == SEEK_SET) new_pos = off;
     else if (whence == SEEK_CUR) new_pos += off;
     else if (whence == SEEK_END) new_pos = buffer->size + off;
-
     if (new_pos > (toff_t)buffer->size) return (toff_t)-1;
     buffer->pos = new_pos;
     return buffer->pos;
@@ -86,6 +85,7 @@ static toff_t tiffSeekProc(thandle_t fd, toff_t off, int whence) {
 static int tiffCloseProc(thandle_t fd) { (void)fd; return 0; }
 static toff_t tiffSizeProc(thandle_t fd) { TiffBuffer* buffer = (TiffBuffer*)fd; return buffer->size; }
 
+// --- GÜNCELLENMİŞ VE DÜZELTİLMİŞ FONKSİYON ---
 static void* convert_raw_to_tiff_memory(struct still_buffer* raw_buffer, tsize_t* tiff_size) {
     TiffBuffer tiff_buffer;
     tiff_buffer.capacity = raw_buffer->bytesused + 4096;
@@ -102,33 +102,28 @@ static void* convert_raw_to_tiff_memory(struct still_buffer* raw_buffer, tsize_t
         return NULL;
     }
     
-    // TEMEL TIFF/DNG ETİKETLERİ
     TIFFSetField(tif, TIFFTAG_SUBFILETYPE, 0);
     TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, raw_buffer->width);
     TIFFSetField(tif, TIFFTAG_IMAGELENGTH, raw_buffer->height);
     TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, 1);
     TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, 12);
     TIFFSetField(tif, TIFFTAG_COMPRESSION, COMPRESSION_NONE);
-    TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_CFA); // Renk Filtre Dizisi (Bayer)
+    TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_CFA);
     TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
     TIFFSetField(tif, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
 
-    // --- DCRAW'IN OKUMASI İÇİN KRİTİK DNG ETİKETLERİ ---
+    // --- KRİTİK DÜZELTMELER ---
     uint16_t dng_version[] = {1, 4, 0, 0};
     TIFFSetField(tif, TIFFTAG_DNGVERSION, dng_version);
     
-    // Bayer desenini belirt (RGGB). Bu sensöre göre değişebilir ama RPi için standarttır.
-    uint16_t cfa_pattern[] = {0, 1, 1, 2}; // 0=Kırmızı, 1=Yeşil, 2=Mavi
+    // Logdaki SBGGR12'ye göre Bayer desenini BGGR olarak ayarla
+    uint16_t cfa_pattern[] = {2, 1, 1, 0}; // 0=R, 1=G, 2=B  (BG/GR -> 2,1 / 1,0)
     TIFFSetField(tif, TIFFTAG_CFAPATTERN, cfa_pattern);
     
-    // Siyah ve beyaz seviyeleri (Bu değerler sensöre özeldir, tahmini değerler kullanıldı)
-    uint16_t black_level = 256; // 12-bit için örnek bir değer
-    TIFFSetField(tif, TIFFTAG_BLACKLEVEL, 1, &black_level);
-    
-    uint16_t white_level = 4095; // 12-bit'in maksimum değeri
-    TIFFSetField(tif, TIFFTAG_WHITELEVEL, 1, &white_level);
+    // BlackLevel ve WhiteLevel etiketlerini, & operatörü olmadan, doğrudan değerle ayarla
+    TIFFSetField(tif, TIFFTAG_BLACKLEVEL, (uint16_t)1024); // imx477 için daha gerçekçi bir değer
+    TIFFSetField(tif, TIFFTAG_WHITELEVEL, (uint16_t)4095);
 
-    // --- VERİYİ YAZMA ---
     if (TIFFWriteRawStrip(tif, 0, raw_buffer->mem, raw_buffer->bytesused) < 0) {
         fprintf(stderr, "TIFFWriteRawStrip failed\n");
         TIFFClose(tif);
@@ -141,10 +136,11 @@ static void* convert_raw_to_tiff_memory(struct still_buffer* raw_buffer, tsize_t
     return tiff_buffer.data;
 }
 
+
+// --- Geri kalan kod (still_capture_ready_cb, client_thread_func, vb.) aynı ---
 static void still_capture_ready_cb(void *data, struct still_buffer *buffer_from_camera) {
     struct http_client_session *session = (struct http_client_session *)data;
     void *data_copy = NULL;
-
     if (buffer_from_camera && !buffer_from_camera->error && buffer_from_camera->bytesused > 0) {
         data_copy = malloc(buffer_from_camera->bytesused);
         if (data_copy) {
@@ -153,7 +149,6 @@ static void still_capture_ready_cb(void *data, struct still_buffer *buffer_from_
             fprintf(stderr, "Failed to allocate memory for data copy\n");
         }
     }
-
     pthread_mutex_lock(&session->mtx);
     if (data_copy) {
         session->buffer_data = data_copy;
@@ -179,14 +174,12 @@ static void *client_thread_func(void *arg) {
         if (n < 0) perror("read");
         goto cleanup;
     }
-
     if (strstr(request_buf, "GET /capture") == request_buf) {
         if (!session->server->still_src) {
             const char *response = "HTTP/1.1 503 Service Unavailable\r\n\r\nNo still source available";
             write(session->fd, response, strlen(response));
         } else {
             libcamera_still_source_set_callback(session->server->still_src, still_capture_ready_cb, session);
-
             if (still_source_capture(session->server->still_src) < 0) {
                 const char *response = "HTTP/1.1 500 Internal Server Error\r\n\r\nFailed to start capture";
                 write(session->fd, response, strlen(response));
@@ -195,10 +188,8 @@ static void *client_thread_func(void *arg) {
                 while (!session->capture_complete) {
                     pthread_cond_wait(&session->cond, &session->mtx);
                 }
-
                 if (session->buffer_data && !session->captured_data.error) {
                     tiff_data = convert_raw_to_tiff_memory(&session->captured_data, &tiff_size);
-
                     if (tiff_data) {
                         char http_header[256];
                         int http_header_len = snprintf(http_header, sizeof(http_header),
@@ -207,7 +198,6 @@ static void *client_thread_func(void *arg) {
                                                   "Content-Disposition: attachment; filename=\"capture.dng\"\r\n"
                                                   "Content-Length: %zu\r\n\r\n",
                                                   (size_t)tiff_size);
-
                         if (send_all(session->fd, http_header, http_header_len) == 0) {
                             if (send_all(session->fd, tiff_data, tiff_size) == 0) {
                                 printf("Sent DNG/TIFF image (%zu bytes) to fd %d\n", (size_t)tiff_size, session->fd);
@@ -228,7 +218,6 @@ static void *client_thread_func(void *arg) {
         const char *response = "HTTP/1.1 404 Not Found\r\n\r\n404 Not Found";
         write(session->fd, response, strlen(response));
     }
-
 cleanup:
     printf("Connection closed: fd %d\n", session->fd);
     close(session->fd);
@@ -243,7 +232,6 @@ cleanup:
 static void *http_server_thread(void *arg) {
     struct http_server *server = (struct http_server *)arg;
     printf("HTTP server thread started, listening...\n");
-
     while (server->running) {
         int client_fd = accept(server->listen_fd, NULL, NULL);
         if (client_fd < 0) {
@@ -251,20 +239,17 @@ static void *http_server_thread(void *arg) {
             perror("accept");
             continue;
         }
-
         struct http_client_session *session = (struct http_client_session*)malloc(sizeof(struct http_client_session));
         if (!session) {
             close(client_fd);
             continue;
         }
-
         session->fd = client_fd;
         session->server = server;
         session->buffer_data = NULL;
         session->capture_complete = false;
         pthread_mutex_init(&session->mtx, NULL);
         pthread_cond_init(&session->cond, NULL);
-
         if (pthread_create(&session->thread, NULL, client_thread_func, session) != 0) {
             perror("pthread_create for client");
             close(client_fd);
@@ -272,7 +257,6 @@ static void *http_server_thread(void *arg) {
         }
         pthread_detach(session->thread);
     }
-
     printf("HTTP server thread shutting down.\n");
     return NULL;
 }
@@ -283,64 +267,52 @@ struct http_server *http_capture_new(int port, struct video_source *video_src) {
         perror("malloc for server");
         return NULL;
     }
-
     server->still_src = video_src ? libcamera_get_still_source(video_src) : NULL;
     server->running = true;
-
     server->listen_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (server->listen_fd < 0) {
         perror("socket");
         free(server);
         return NULL;
     }
-
     int opt = 1;
     setsockopt(server->listen_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-
     struct sockaddr_in serv_addr = {0};
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     serv_addr.sin_port = htons(port);
-
     if (bind(server->listen_fd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
         perror("bind");
         close(server->listen_fd);
         free(server);
         return NULL;
     }
-
     if (listen(server->listen_fd, 10) < 0) {
         perror("listen");
         close(server->listen_fd);
         free(server);
         return NULL;
     }
-
     if (pthread_create(&server->server_thread, NULL, http_server_thread, server) != 0) {
         perror("pthread_create for server");
         close(server->listen_fd);
         free(server);
         return NULL;
     }
-
     printf("HTTP capture server listening on port %d\n", port);
     if (!server->still_src) {
         printf("WARNING: No still source available - /capture will fail\n");
     }
-
     return server;
 }
 
 void http_capture_destroy(struct http_server *server) {
     if (!server) return;
-
     printf("Destroying HTTP capture server...\n");
     server->running = false;
     shutdown(server->listen_fd, SHUT_RDWR);
     close(server->listen_fd);
-
     pthread_join(server->server_thread, NULL);
-
     free(server);
-    printf("HTTP server destroyed\n");
+    printf("HTTP capture server destroyed\n");
 }
