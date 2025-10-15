@@ -35,16 +35,17 @@ static void *client_thread_func(void *arg);
 static void *http_server_thread(void *arg);
 static void still_capture_ready_cb(void *data, struct still_buffer *buffer);
 
-// Callback to copy the final DNG data from the C++ side.
+// Callback to receive the final DNG data from the C++ side.
 static void still_capture_ready_cb(void *data, struct still_buffer *buffer_from_camera) {
     struct http_client_session *session = (struct http_client_session *)data;
 
     pthread_mutex_lock(&session->mtx);
     // C++ tarafından gelen buffer'ı doğrudan alıyoruz.
-    // data_copy'ye gerek yok, çünkü C++ tarafı zaten bizim için malloc yaptı.
     if (buffer_from_camera && !buffer_from_camera->error && buffer_from_camera->mem) {
         session->captured_data = *buffer_from_camera;
     } else {
+        // Eğer C++ tarafı bizim için bellek ayırmadıysa veya bir hata olduysa,
+        // mem pointer'ının NULL olduğundan emin olalım.
         session->captured_data.mem = NULL;
         session->captured_data.error = true;
     }
@@ -135,6 +136,7 @@ static void *http_server_thread(void *arg) {
     }
     return NULL;
 }
+
 struct http_server *http_capture_new(int port, struct video_source *video_src) {
     struct http_server *server = (struct http_server*)calloc(1, sizeof(*server));
     if (!server) return NULL;
@@ -164,6 +166,7 @@ struct http_server *http_capture_new(int port, struct video_source *video_src) {
     }
     return server;
 }
+
 void http_capture_destroy(struct http_server *server) {
     if (!server) return;
     server->running = false;
