@@ -118,6 +118,8 @@ void libcamera_source::requestComplete(Request *request)
 	if (request->status() == Request::RequestCancelled) {
 		return;
 	}
+
+
 	const ControlList &metadata = request->metadata();
 	bool is_still = request->findBuffer(config->at(1).stream()) != nullptr;
 	bool is_video = request->findBuffer(config->at(0).stream()) != nullptr;
@@ -133,6 +135,8 @@ void libcamera_source::requestComplete(Request *request)
 		write(pfds[1], "v", 1);
 	} else if (is_still) {
 
+		request->controls().set(controls::AeEnable, true);
+    	request->controls().set(controls::AwbEnable, true);
 		still.completed_requests.push(request);
 		printf("Video Exposure: %lldus, Gain: %.2f\n",
 			  (long long)this->video.latest_exposure_time,
