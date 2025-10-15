@@ -798,6 +798,8 @@ struct video_source *libcamera_source_create(const char *devname)
 			std::cout << "Enabling continuous auto-focus" << std::endl;
 			src->controls.set(controls::AfMode, controls::AfModeContinuous);
 		}
+		src->controls.set(controls::AwbEnable, true);
+		
 
 		std::cout << "Enabling Auto Exposure and Auto Gain" << std::endl;
 		src->controls.set(controls::AeEnable, true);
