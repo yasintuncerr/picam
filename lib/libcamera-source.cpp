@@ -32,6 +32,8 @@ extern "C" {
 #include "video-buffers.h"
 #include "still-source.h"
 }
+#include <libcamera/apps/common/dng_writer.h>
+
 
 using namespace libcamera;
 using namespace std::placeholders;
@@ -295,40 +297,64 @@ static void libcamera_source_still_process(libcamera_source *src)
     }
     void *data = span->second.data();
 
-    // DNGWriter'ı doğrudan bir dosyaya değil, bellekteki bir stream'e yazdıracağız
-    // Bunun için C++'ın stringstream'ini kullanacağız.
-    std::stringstream ss;
+    // RAM disk'e geçici dosya oluştur
 
-    // libcamera'nın kendi DNGWriter'ını kullan!
-    int ret = DNGWriter::write(ss, *(src->camera), config, metadata, frameBuffer, data);
+    char temp_path[256];
+
+    snprintf(temp_path, sizeof(temp_path), "/dev/shm/capture_%d_%ld.dng", 
+
+             getpid(), time(NULL));
+
+    
+
+    // DNGWriter'ı dosyaya yaz
+
+    int ret = DNGWriter::write(temp_path, src->camera.get(), config, 
+
+                              metadata, frameBuffer, data);
 
     if (ret == 0) {
-        std::string dng_data = ss.str();
-        size_t dng_size = dng_data.length();
 
-        // C tarafına göndermek için veriyi malloc ile ayrılmış bir alana kopyala
-        buffer.mem = malloc(dng_size);
-        if (buffer.mem) {
-            memcpy(buffer.mem, dng_data.c_str(), dng_size);
-            buffer.bytesused = dng_size;
-            buffer.error = false;
-            buffer.timestamp.tv_sec = frameBuffer->metadata().timestamp / 1000000;
-            buffer.timestamp.tv_usec = frameBuffer->metadata().timestamp % 1000000;
-        } else {
-            std::cerr << "Failed to allocate memory for DNG buffer" << std::endl;
+        // Dosyayı belleğe oku
+
+        FILE *fp = fopen(temp_path, "rb");
+
+        if (fp) {
+            fseek(fp, 0, SEEK_END);
+            size_t size = ftell(fp);
+            fseek(fp, 0, SEEK_SET);
+            buffer.mem = malloc(size);
+
+            if (buffer.mem) {
+
+                fread(buffer.mem, 1, size, fp);
+
+                buffer.bytesused = size;
+
+                buffer.error = false;
+
+                buffer.timestamp.tv_sec = frameBuffer->metadata().timestamp / 1000000;
+
+                buffer.timestamp.tv_usec = frameBuffer->metadata().timestamp % 1000000;
+
+            }
+
+            fclose(fp);
+
         }
-    } else {
-        std::cerr << "DNGWriter failed with error " << ret << std::endl;
+
+        unlink(temp_path);
     }
 
-    // C tarafına hazır DNG buffer'ını (veya hata durumunu) bildir
     if (src->still.capture_ready_cb)
+
         src->still.capture_ready_cb(src->still.capture_ready_data, &buffer);
 
     src->still.capture_in_progress = false;
-    delete request;
-}
 
+    delete request;
+
+}
 static void libcamera_source_destroy(struct video_source *s)
 {
 	struct libcamera_source *src = to_libcamera_source(s);
