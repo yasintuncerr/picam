@@ -167,51 +167,10 @@ void libcamera_source::outputReady(void *mem, size_t bytesused, int64_t timestam
 
 int libcamera_source::captureStill()
 {
-	//if (still.capture_in_progress || still.mapped_buffers_.empty()) {
-	//	return -EBUSY;
-	//}
-
 	std::unique_ptr<Request> request = camera->createRequest();
 	if (!request) {
 		return -ENOMEM;
 	}
-
-	/*if (this->video.latest_exposure_time > 0 && this->video.latest_analogue_gain > 0.0f) {
-        printf("Applying controls from running stream: Exposure %lldus, Gain %.2f\n",
-       										(long long)this->video.latest_exposure_time,
-       										this->video.latest_analogue_gain);
-
-        request->controls().set(controls::ExposureTime, this->video.latest_exposure_time);
-        request->controls().set(controls::AnalogueGain, this->video.latest_analogue_gain);
-    } else {
-       
-	*/
-
-	// 1. Manuel pozlama moduna geç, OTOMATİK BEYAZ DENGESİNİ AÇIK BIRAK.
-    request->controls().set(controls::AeEnable, true);
-    request->controls().set(controls::AwbEnable, true); // Renkler için AWB algoritması çalışsın.
-
-    // 2. Yüksek pozlama, yüksek analog ve dijital kazanç değerleri belirle.
-    //int64_t manual_exposure = 10000; // 0.5 saniye
-    //float manual_analogue_gain = 8.0f;
-    //float manual_digital_gain = 2.0f; // Dijital kazancı da devreye sokuyoruz.
-
-    // 3. Video akışının frame rate limitini bu tek kare için EZ.
-    //    Maksimum 2 saniyeye kadar pozlamaya izin ver.
-    libcamera::Span<const int64_t, 2> frame_duration_limits({0, 500000});
-    request->controls().set(controls::FrameDurationLimits, frame_duration_limits);
-
-    // 4. Tüm manuel ayarlarımızı isteğe ekle.
-    //request->controls().set(controls::ExposureTime, manual_exposure);
-    //request->controls().set(controls::AnalogueGain, manual_analogue_gain);
-    //request->controls().set(controls::DigitalGain, manual_digital_gain);
-
-    //printf(">>> FINAL ATTEMPT: Manual Exposure/Gain + AWB + FrameDuration Override <<<\n");
-    //printf("  - Target Exposure: %lldus\n", (long long)manual_exposure);
-    //printf("  - Target AnalogueGain: %.2f\n", manual_analogue_gain);
-    //printf("  - Target DigitalGain: %.2f\n", manual_digital_gain);
-
-    //}
 
 	FrameBuffer *buffer_to_use = still.mapped_buffers_.begin()->first;
 	Stream *stream = config->at(1).stream();
@@ -255,13 +214,11 @@ static void libcamera_source_video_process(libcamera_source *src)
 	Stream *stream = src->config->at(0).stream();
 	struct video_buffer buffer;
 	Request *request;
-	//char buf;
 
 	/*
 	 * We need to perform a read here or the fd will stay active each time
 	 * the event loop cycles.
 	 */
-	//read(src->pfds[0], &buf, 1);
 
 	if (src->video.completed_requests.empty())
 		return;
@@ -306,41 +263,85 @@ static void libcamera_source_video_process(libcamera_source *src)
 
 static void libcamera_source_still_process(libcamera_source *src)
 {
-    Stream *stream = src->config->at(1).stream();
-    Request *request;
-
     if(src->still.completed_requests.empty())
         return;
 
-    request = src->still.completed_requests.front();
+    Request *request = src->still.completed_requests.front();
     src->still.completed_requests.pop();
 
+    
+    const ControlList &metadata = request->metadata();
+
     FrameBuffer *fb = request->buffers().begin()->second;
+    Stream *stream = src->config->at(1).stream(); // Still stream
 
     struct still_buffer buffer;
+
+    // Basic Buffer Information
     buffer.size = fb->planes()[0].length;
-    
-    // Mapped buffer'dan gerçek memory pointer'ını al
-    auto span = src->still.mapped_buffers_.find(fb);
-    if (span != src->still.mapped_buffers_.end()) {
-        buffer.mem = span->second.data();
-    } else {
-        buffer.mem = NULL;
-    }
-    
     buffer.bytesused = fb->metadata().planes()[0].bytesused;
     buffer.timestamp.tv_sec = fb->metadata().timestamp / 1000000;
     buffer.timestamp.tv_usec = fb->metadata().timestamp % 1000000;
     buffer.error = false;
-    buffer.width = stream->configuration().size.width;
-    buffer.height = stream->configuration().size.height;
-    buffer.pixelformat = stream->configuration().pixelFormat.fourcc();
+
+    // Get Mapped Memory
+    auto span = src->still.mapped_buffers_.find(fb);
+    if (span != src->still.mapped_buffers_.end()) {
+        buffer.mem = span->second.data();
+    } else {
+        buffer.mem = nullptr;
+    }
+
+    const StreamConfiguration &cfg = stream->configuration();
+    buffer.width = cfg.size.width;
+    buffer.height = cfg.size.height;
+    buffer.pixelformat = cfg.pixelFormat.fourcc();
+    buffer.bit_depth = 12; 
+
+
+    // Black Levels
+    auto blackLevels = metadata.get<Span<const int32_t>>(controls::SensorBlackLevels);
+    if (blackLevels && blackLevels->size() == 4) {
+        for(size_t i = 0; i < 4; ++i) buffer.black_levels[i] = (*blackLevels)[i];
+    } else {
+        for(size_t i = 0; i < 4; ++i) buffer.black_levels[i] = 0; 
+    }
+
+	// White Level
+    auto whiteLevel = metadata.get<int32_t>(controls::SensorWhiteLevel);
+    if (whiteLevel) {
+        buffer.white_level = *whiteLevel;
+    } else {
+        buffer.white_level = (1 << buffer.bit_depth) - 1;
+    }
+
+    // White Balance Gains
+    auto wb_gains = metadata.get<Span<const float>>(controls::ColourGains);
+    if (wb_gains && wb_gains->size() == 2) {
+        buffer.white_balance_gains[0] = (*wb_gains)[0]; 
+        buffer.white_balance_gains[1] = 1.0f;           
+        buffer.white_balance_gains[2] = (*wb_gains)[1]; 
+    } else {
+        buffer.white_balance_gains[0] = 1.0f;
+        buffer.white_balance_gains[1] = 1.0f;
+        buffer.white_balance_gains[2] = 1.0f;
+    }
+
+    // Color Correction Matrix
+    auto ccm = metadata.get<Span<const float>>(controls::ColourCorrectionMatrix);
+    if (ccm && ccm->size() == 9) {
+        for(size_t i = 0; i < 9; ++i) buffer.color_correction_matrix[i] = (*ccm)[i];
+    } else {
+        static constexpr float identity_matrix[9] = { 1,0,0, 0,1,0, 0,0,1 };
+        memcpy(buffer.color_correction_matrix, identity_matrix, sizeof(identity_matrix));
+    }
+
 
     if(src->still.capture_ready_cb)
         src->still.capture_ready_cb(src->still.capture_ready_data, &buffer);
-    
+
     src->still.capture_in_progress = false;
-    delete request; // Bu doğru - raw pointer olarak alındı
+    delete request; 
 }
 
 static void libcamera_source_destroy(struct video_source *s)
