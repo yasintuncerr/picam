@@ -88,7 +88,7 @@ static toff_t tiffSizeProc(thandle_t fd) { TiffBuffer* buffer = (TiffBuffer*)fd;
 
 static void* convert_raw_to_tiff_memory(struct still_buffer* raw_buffer, tsize_t* tiff_size) {
     TiffBuffer tiff_buffer;
-    tiff_buffer.capacity = raw_buffer->bytesused + 4096; // Veri + TIFF başlıkları için pay
+    tiff_buffer.capacity = raw_buffer->bytesused + 4096;
     tiff_buffer.data = (uint8_t*)malloc(tiff_buffer.capacity);
     if (!tiff_buffer.data) return NULL;
     tiff_buffer.pos = 0;
@@ -101,8 +101,9 @@ static void* convert_raw_to_tiff_memory(struct still_buffer* raw_buffer, tsize_t
         free(tiff_buffer.data);
         return NULL;
     }
-
-    // Gerekli TIFF ve DNG etiketlerini ayarla
+    
+    // TEMEL TIFF/DNG ETİKETLERİ
+    TIFFSetField(tif, TIFFTAG_SUBFILETYPE, 0);
     TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, raw_buffer->width);
     TIFFSetField(tif, TIFFTAG_IMAGELENGTH, raw_buffer->height);
     TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, 1);
@@ -112,11 +113,22 @@ static void* convert_raw_to_tiff_memory(struct still_buffer* raw_buffer, tsize_t
     TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
     TIFFSetField(tif, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
 
-    // DNG için temel etiketler
+    // --- DCRAW'IN OKUMASI İÇİN KRİTİK DNG ETİKETLERİ ---
     uint16_t dng_version[] = {1, 4, 0, 0};
     TIFFSetField(tif, TIFFTAG_DNGVERSION, dng_version);
+    
+    // Bayer desenini belirt (RGGB). Bu sensöre göre değişebilir ama RPi için standarttır.
+    uint16_t cfa_pattern[] = {0, 1, 1, 2}; // 0=Kırmızı, 1=Yeşil, 2=Mavi
+    TIFFSetField(tif, TIFFTAG_CFAPATTERN, cfa_pattern);
+    
+    // Siyah ve beyaz seviyeleri (Bu değerler sensöre özeldir, tahmini değerler kullanıldı)
+    uint16_t black_level = 256; // 12-bit için örnek bir değer
+    TIFFSetField(tif, TIFFTAG_BLACKLEVEL, 1, &black_level);
+    
+    uint16_t white_level = 4095; // 12-bit'in maksimum değeri
+    TIFFSetField(tif, TIFFTAG_WHITELEVEL, 1, &white_level);
 
-    // Veriyi tek bir şerit (strip) olarak yaz.
+    // --- VERİYİ YAZMA ---
     if (TIFFWriteRawStrip(tif, 0, raw_buffer->mem, raw_buffer->bytesused) < 0) {
         fprintf(stderr, "TIFFWriteRawStrip failed\n");
         TIFFClose(tif);
@@ -191,7 +203,8 @@ static void *client_thread_func(void *arg) {
                         char http_header[256];
                         int http_header_len = snprintf(http_header, sizeof(http_header),
                                                   "HTTP/1.1 200 OK\r\n"
-                                                  "Content-Type: image/tiff\r\n" // Veya image/dng
+                                                  "Content-Type: image/tiff\r\n"
+                                                  "Content-Disposition: attachment; filename=\"capture.dng\"\r\n"
                                                   "Content-Length: %zu\r\n\r\n",
                                                   (size_t)tiff_size);
 
@@ -329,5 +342,5 @@ void http_capture_destroy(struct http_server *server) {
     pthread_join(server->server_thread, NULL);
 
     free(server);
-    printf("HTTP capture server destroyed\n");
+    printf("HTTP server destroyed\n");
 }
