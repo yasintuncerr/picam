@@ -33,13 +33,12 @@ typedef struct {
     tsize_t capacity;
 } TiffBuffer;
 
-// Forward declarations
+// Forward declarations ve diğer yardımcı fonksiyonlar (değişiklik yok)
 static void *client_thread_func(void *arg);
 static void *http_server_thread(void *arg);
 static void still_capture_ready_cb(void *data, struct still_buffer *buffer);
 static void* convert_raw_to_tiff_memory(struct still_buffer* raw_buffer, tsize_t* tiff_size);
 
-// --- send_all ve tiff*Proc fonksiyonları aynı kalıyor ---
 static int send_all(int fd, const void *buf, size_t len) {
     const char *ptr = (const char *)buf;
     while (len > 0) {
@@ -70,7 +69,6 @@ static tsize_t tiffWriteProc(thandle_t fd, tdata_t buf, tsize_t size) {
 }
 
 static tsize_t tiffReadProc(thandle_t fd, tdata_t buf, tsize_t size) { (void)fd; (void)buf; (void)size; return 0; }
-
 static toff_t tiffSeekProc(thandle_t fd, toff_t off, int whence) {
     TiffBuffer* buffer = (TiffBuffer*)fd;
     toff_t new_pos = buffer->pos;
@@ -81,11 +79,11 @@ static toff_t tiffSeekProc(thandle_t fd, toff_t off, int whence) {
     buffer->pos = new_pos;
     return buffer->pos;
 }
-
 static int tiffCloseProc(thandle_t fd) { (void)fd; return 0; }
 static toff_t tiffSizeProc(thandle_t fd) { TiffBuffer* buffer = (TiffBuffer*)fd; return buffer->size; }
 
-// --- GÜNCELLENMİŞ VE DÜZELTİLMİŞ FONKSİYON ---
+
+// NIHAYET DÜZELTİLMİŞ FONKSİYON
 static void* convert_raw_to_tiff_memory(struct still_buffer* raw_buffer, tsize_t* tiff_size) {
     TiffBuffer tiff_buffer;
     tiff_buffer.capacity = raw_buffer->bytesused + 4096;
@@ -102,6 +100,7 @@ static void* convert_raw_to_tiff_memory(struct still_buffer* raw_buffer, tsize_t
         return NULL;
     }
     
+    // --- TEMEL TIFF/DNG ETİKETLERİ ---
     TIFFSetField(tif, TIFFTAG_SUBFILETYPE, 0);
     TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, raw_buffer->width);
     TIFFSetField(tif, TIFFTAG_IMAGELENGTH, raw_buffer->height);
@@ -111,18 +110,27 @@ static void* convert_raw_to_tiff_memory(struct still_buffer* raw_buffer, tsize_t
     TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_CFA);
     TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
     TIFFSetField(tif, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
+    TIFFSetField(tif, TIFFTAG_MAKE, "Raspberry Pi");
+    TIFFSetField(tif, TIFFTAG_MODEL, "imx477");
 
-    // --- KRİTİK DÜZELTMELER ---
     uint16_t dng_version[] = {1, 4, 0, 0};
     TIFFSetField(tif, TIFFTAG_DNGVERSION, dng_version);
     
-    // Logdaki SBGGR12'ye göre Bayer desenini BGGR olarak ayarla
+    // --- KRİTİK DÜZELTMELER ---
+    // 1. Bayer desenini logdaki SBGGR12'ye göre BGGR olarak ayarla
     uint16_t cfa_pattern[] = {2, 1, 1, 0}; // 0=R, 1=G, 2=B  (BG/GR -> 2,1 / 1,0)
     TIFFSetField(tif, TIFFTAG_CFAPATTERN, cfa_pattern);
     
-    // BlackLevel ve WhiteLevel etiketlerini, & operatörü olmadan, doğrudan değerle ayarla
-    TIFFSetField(tif, TIFFTAG_BLACKLEVEL, (uint16_t)1024); // imx477 için daha gerçekçi bir değer
-    TIFFSetField(tif, TIFFTAG_WHITELEVEL, (uint16_t)4095);
+    // 2. BlackLevel ve WhiteLevel'ı DİZİ olarak tanımla ve pointer ile geç
+    uint16_t black_levels[] = {1024, 1024, 1024, 1024}; // Her renk kanalı için
+    TIFFSetField(tif, TIFFTAG_BLACKLEVEL, 4, black_levels);
+    
+    uint16_t white_level[] = {4095};
+    TIFFSetField(tif, TIFFTAG_WHITELEVEL, 1, white_level);
+
+    // 3. dcraw'ın renkleri doğru işlemesi için standart renk matrisi ekle
+    float color_matrix1[] = { 1.475, -0.55, -0.15, -0.4, 1.25, 0.1, 0.0, 0.1, 0.75 };
+    TIFFSetField(tif, TIFFTAG_COLORMATRIX1, 9, color_matrix1);
 
     if (TIFFWriteRawStrip(tif, 0, raw_buffer->mem, raw_buffer->bytesused) < 0) {
         fprintf(stderr, "TIFFWriteRawStrip failed\n");
