@@ -265,81 +265,68 @@ static void libcamera_source_video_process(libcamera_source *src)
 }
 
 
-/**
- * @brief Populates a still_buffer struct with all necessary geometry and color metadata from a completed request.
- * @param request The completed libcamera::Request object.
- * @param buffer A pointer to the still_buffer struct to be filled.
- * @param src A pointer to the libcamera_source to access mapped buffers.
- */
-static void populate_still_buffer_from_request(Request *request, struct still_buffer *buffer, libcamera_source *src)
-{
-    FrameBuffer *fb = request->buffers().begin()->second;
-    Stream *stream = src->config->at(1).stream(); // Still stream
-    const ControlList &metadata = request->metadata();
-    const StreamConfiguration &cfg = stream->configuration();
-
-    // --- Essential Geometry and Buffer Info ---
-    buffer->error = false;
-    buffer->timestamp.tv_sec = fb->metadata().timestamp / 1000000;
-    buffer->timestamp.tv_usec = fb->metadata().timestamp % 1000000;
-    buffer->bytesused = fb->metadata().planes()[0].bytesused;
-    buffer->width = cfg.size.width;
-    buffer->height = cfg.size.height;
-    buffer->stride = cfg.stride; // The CRITICAL stride value
-    buffer->pixelformat = cfg.pixelFormat.fourcc();
-    
-    // Get the memory pointer
-    auto span = src->still.mapped_buffers_.find(fb);
-    buffer->mem = (span != src->still.mapped_buffers_.end()) ? span->second.data() : nullptr;
-
-    // --- Essential RAW Color Metadata ---
-    buffer->bit_depth = 12; // Assuming 12 for SBGGR12
-    buffer->white_level = (1 << buffer->bit_depth) - 1;
-
-    auto blackLevels = metadata.get<Span<const int32_t, 4>>(controls::SensorBlackLevels);
-    if (blackLevels) {
-        for(size_t i = 0; i < 4; ++i) buffer->black_level[i] = (*blackLevels)[i];
-    }
-
-    auto wb_gains = metadata.get<Span<const float, 2>>(controls::ColourGains);
-    if (wb_gains) {
-        buffer->white_balance_gains[0] = (*wb_gains)[0]; 
-        buffer->white_balance_gains[1] = 1.0f;           
-        buffer->white_balance_gains[2] = (*wb_gains)[1]; 
-    }
-
-    auto ccm = metadata.get<Span<const float, 9>>(controls::ColourCorrectionMatrix);
-    if (ccm) {
-        for(size_t i = 0; i < 9; ++i) buffer->color_correction_matrix[i] = (*ccm)[i];
-    } else {
-        // Provide a default identity matrix if none is available
-        static const float identity_matrix[9] = { 1,0,0, 0,1,0, 0,0,1 };
-        memcpy(buffer->color_correction_matrix, identity_matrix, sizeof(identity_matrix));
-    }
-}
-
-
-// 2. libcamera-source.cpp dosyanızdaki mevcut libcamera_source_still_process fonksiyonunu bu basitleştirilmiş versiyonla değiştirin.
-
 static void libcamera_source_still_process(libcamera_source *src)
 {
-    if(src->still.completed_requests.empty())
+    if (src->still.completed_requests.empty())
         return;
 
     Request *request = src->still.completed_requests.front();
     src->still.completed_requests.pop();
 
-    struct still_buffer buffer = {}; // Initialize buffer to zero
+    struct still_buffer buffer = {}; // Initialize to zero
+    buffer.error = true; // Assume error until success
 
-    // Call the new helper function to do all the work
-    populate_still_buffer_from_request(request, &buffer, src);
+    // Gerekli tüm libcamera nesnelerini al
+    Stream *stream = src->config->at(1).stream();
+    const StreamConfiguration &config = stream->configuration();
+    const ControlList &metadata = request->metadata();
+    FrameBuffer *frameBuffer = request->buffers().at(stream);
+    
+    // Mapped buffer'dan ham veri pointer'ını al
+    auto span = src->still.mapped_buffers_.find(frameBuffer);
+    if (span == src->still.mapped_buffers_.end()) {
+        std::cerr << "Could not find mapped buffer for DNG writing" << std::endl;
+        delete request;
+        src->still.capture_in_progress = false;
+        // Callback'i yine de çağırabiliriz ki client beklemede kalmasın
+        if (src->still.capture_ready_cb)
+            src->still.capture_ready_cb(src->still.capture_ready_data, &buffer);
+        return;
+    }
+    void *data = span->second.data();
 
-    // Pass the fully populated buffer to the C-side callback
+    // DNGWriter'ı doğrudan bir dosyaya değil, bellekteki bir stream'e yazdıracağız
+    // Bunun için C++'ın stringstream'ini kullanacağız.
+    std::stringstream ss;
+
+    // libcamera'nın kendi DNGWriter'ını kullan!
+    int ret = DNGWriter::write(ss, *(src->camera), config, metadata, frameBuffer, data);
+
+    if (ret == 0) {
+        std::string dng_data = ss.str();
+        size_t dng_size = dng_data.length();
+
+        // C tarafına göndermek için veriyi malloc ile ayrılmış bir alana kopyala
+        buffer.mem = malloc(dng_size);
+        if (buffer.mem) {
+            memcpy(buffer.mem, dng_data.c_str(), dng_size);
+            buffer.bytesused = dng_size;
+            buffer.error = false;
+            buffer.timestamp.tv_sec = frameBuffer->metadata().timestamp / 1000000;
+            buffer.timestamp.tv_usec = frameBuffer->metadata().timestamp % 1000000;
+        } else {
+            std::cerr << "Failed to allocate memory for DNG buffer" << std::endl;
+        }
+    } else {
+        std::cerr << "DNGWriter failed with error " << ret << std::endl;
+    }
+
+    // C tarafına hazır DNG buffer'ını (veya hata durumunu) bildir
     if (src->still.capture_ready_cb)
         src->still.capture_ready_cb(src->still.capture_ready_data, &buffer);
 
     src->still.capture_in_progress = false;
-    delete request; 
+    delete request;
 }
 
 static void libcamera_source_destroy(struct video_source *s)
