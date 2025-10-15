@@ -47,4 +47,3 @@ pkg_mod.generate(libuvcgadget,
                  subdirs : 'uvcgadget')
 
 meson.override_dependency('uvcgadget', libuvcgadget_dep)
-yasin@192 Downloads % 
