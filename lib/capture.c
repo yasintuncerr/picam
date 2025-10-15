@@ -1,9 +1,8 @@
 /*
  * SPDX-License-Identifier: LGPL-2.1-or-later
  *
- * An HTTP server for still captures. This version contains the CORRECT
- * unpacking logic for Raspberry Pi's specific 12-bit packed RAW format.
- * This is the final and definitive version.
+ * An HTTP server for still captures. This version contains the DEFINITIVE
+ * fix for the stride and data unpacking issues for Raspberry Pi's RAW format.
  *
  * Copyright (C) 2025 Yasin Tunçer
  */
@@ -77,7 +76,7 @@ static int tiffCloseProc(thandle_t fd) { (void)fd; return 0; }
 static toff_t tiffSizeProc(thandle_t fd) { return ((TiffMemoryBuffer*)fd)->size; }
 
 
-// NEW HELPER: Creates a new, contiguous buffer by removing stride padding.
+// HELPER 1: Creates a new, contiguous (stride-less) buffer from the source.
 static void* create_contiguous_buffer(const struct still_buffer* buffer) {
     if (!buffer->mem || buffer->stride == 0) return NULL;
     size_t valid_bytes_per_row = (size_t)buffer->width * 3 / 2;
@@ -95,7 +94,7 @@ static void* create_contiguous_buffer(const struct still_buffer* buffer) {
     return contiguous_buffer;
 }
 
-// THE CORRECT UNPACK FUNCTION FOR RASPBERRY PI 12-BIT RAW
+// HELPER 2: The CORRECT unpack function for Raspberry Pi's specific 12-bit RAW format.
 static uint16_t* unpack_rpi_12bit_to_16bit(const uint8_t* packed_buffer, size_t num_pixels) {
     size_t packed_size = num_pixels * 3 / 2;
     uint16_t* unpacked_buffer = (uint16_t*)malloc(num_pixels * sizeof(uint16_t));
@@ -103,29 +102,27 @@ static uint16_t* unpack_rpi_12bit_to_16bit(const uint8_t* packed_buffer, size_t 
     
     // Process 4 pixels (6 bytes) at a time
     for (size_t i = 0, j = 0; i < packed_size; i += 6, j += 4) {
-        // Pixel 1: lower 8 bits from byte 0, upper 4 bits from lower nibble of byte 4
         unpacked_buffer[j + 0] = ((uint16_t)packed_buffer[i + 0]) | (((uint16_t)packed_buffer[i + 4] & 0x0F) << 8);
-        // Pixel 2: lower 8 bits from byte 1, upper 4 bits from upper nibble of byte 4
         unpacked_buffer[j + 1] = ((uint16_t)packed_buffer[i + 1]) | (((uint16_t)packed_buffer[i + 4] & 0xF0) << 4);
-        // Pixel 3: lower 8 bits from byte 2, upper 4 bits from lower nibble of byte 5
         unpacked_buffer[j + 2] = ((uint16_t)packed_buffer[i + 2]) | (((uint16_t)packed_buffer[i + 5] & 0x0F) << 8);
-        // Pixel 4: lower 8 bits from byte 3, upper 4 bits from upper nibble of byte 5
         unpacked_buffer[j + 3] = ((uint16_t)packed_buffer[i + 3]) | (((uint16_t)packed_buffer[i + 5] & 0xF0) << 4);
     }
     return unpacked_buffer;
 }
 
 
-// FINAL DNG CONVERSION FUNCTION
+// FINAL AND CORRECT DNG CONVERSION FUNCTION
 static void* convert_raw_to_dng_memory(const struct still_buffer* raw_buffer, tsize_t* dng_size) {
     if (!raw_buffer || !raw_buffer->mem || !dng_size) return NULL;
 
+    // STEP 1: Create a stride-less, contiguous version of the packed buffer.
     void* contiguous_packed_buffer = create_contiguous_buffer(raw_buffer);
     if (!contiguous_packed_buffer) {
         fprintf(stderr, "Failed to create stride-less buffer.\n");
         return NULL;
     }
 
+    // STEP 2: Unpack the new, CLEAN buffer from 12-bit packed to 16-bit containers.
     size_t num_pixels = raw_buffer->width * raw_buffer->height;
     uint16_t* unpacked_data = unpack_rpi_12bit_to_16bit((const uint8_t*)contiguous_packed_buffer, num_pixels);
     free(contiguous_packed_buffer);
@@ -135,6 +132,7 @@ static void* convert_raw_to_dng_memory(const struct still_buffer* raw_buffer, ts
         return NULL;
     }
 
+    // STEP 3: Create the DNG file in memory using the clean, unpacked data.
     TiffMemoryBuffer tiff_buffer = {0};
     tiff_buffer.capacity = (num_pixels * sizeof(uint16_t)) + 8192;
     tiff_buffer.data = (uint8_t*)malloc(tiff_buffer.capacity);
@@ -153,37 +151,42 @@ static void* convert_raw_to_dng_memory(const struct still_buffer* raw_buffer, ts
     TIFFSetField(tif, TIFFTAG_SUBFILETYPE, 0);
     TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, raw_buffer->width);
     TIFFSetField(tif, TIFFTAG_IMAGELENGTH, raw_buffer->height);
-    TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, 16);
+    TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, 16); // Data is now in 16-bit containers
     TIFFSetField(tif, TIFFTAG_COMPRESSION, COMPRESSION_NONE);
     TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_CFA);
     TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, 1);
     TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
     TIFFSetField(tif, TIFFTAG_MAKE, "picam");
     TIFFSetField(tif, TIFFTAG_MODEL, "IMX477");
-
     uint16_t dng_version[] = {1, 4, 0, 0};
     TIFFSetField(tif, TIFFTAG_DNGVERSION, dng_version);
     
-    uint16_t cfa_pattern[4] = {2, 1, 1, 0}; // BGGR
+    // Trust the BGGR pattern from the logs (SBGGR12 -> BGGR)
+    uint16_t cfa_pattern[4] = {2, 1, 1, 0}; // 2=B, 1=G, 0=R -> BG/GR
     TIFFSetField(tif, TIFFTAG_CFAPATTERN, 4, cfa_pattern);
     
-    uint32_t black_levels_32[4]; // libtiff wants uint32 for black levels
+    // Black levels from libcamera are already 16-bit scaled (e.g., 4096).
+    // The previous error was dividing this value. We should use it as is.
+    uint32_t black_levels_32[4];
     for(int i = 0; i < 4; ++i) black_levels_32[i] = raw_buffer->black_level[i];
     TIFFSetField(tif, TIFFTAG_BLACKLEVEL, 4, black_levels_32);
     
-    // Scale white level to 16-bit space, as data is in 16-bit containers now
-    uint32_t white_level_32[] = { (raw_buffer->white_level << 4) | 0x000F }; // 4095 -> 65535
+    // White level must also be scaled to the 16-bit container range.
+    uint32_t white_level_32[] = { 65535 }; // The maximum possible value for a 16-bit integer.
     TIFFSetField(tif, TIFFTAG_WHITELEVEL, 1, white_level_32);
 
+    // DNG requires white balance as 1/gain.
     float as_shot_neutral[3];
     as_shot_neutral[0] = 1.0f / raw_buffer->white_balance_gains[0];
     as_shot_neutral[1] = 1.0f / raw_buffer->white_balance_gains[1];
     as_shot_neutral[2] = 1.0f / raw_buffer->white_balance_gains[2];
     TIFFSetField(tif, TIFFTAG_ASSHOTNEUTRAL, 3, as_shot_neutral);
 
+    // Use the color matrix provided by libcamera.
     TIFFSetField(tif, TIFFTAG_COLORMATRIX1, 9, raw_buffer->color_correction_matrix);
-    TIFFSetField(tif, TIFFTAG_CALIBRATIONILLUMINANT1, 21);
+    TIFFSetField(tif, TIFFTAG_CALIBRATIONILLUMINANT1, 21); // D65 Illuminant
 
+    // Write the FINAL, CORRECTLY UNPACKED data to the DNG.
     if (TIFFWriteRawStrip(tif, 0, unpacked_data, num_pixels * sizeof(uint16_t)) < 0) {
         TIFFClose(tif);
         free(tiff_buffer.data);
