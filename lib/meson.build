@@ -15,6 +15,7 @@ libuvcgadget_sources = files([
   'video-source.c',
   'still-source.c',
   'capture.c',
+  'dng_writer.cpp',
 ])
 
 if libcamera.found()
@@ -30,6 +31,7 @@ libtiff = dependency('libtiff-4', required : true)
 
 libuvcgadget = shared_library('uvcgadget',
                               libuvcgadget_sources,
+                              'dng_writer.cpp',
                               dependencies : [libcamera, libjpeg, threads, libtiff],
                               version : uvc_gadget_version,
                               install : true,
