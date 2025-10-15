@@ -380,13 +380,14 @@ static int libcamera_source_video_set_format(struct video_source *s,
 
 	if (src->config) {
 		StreamConfiguration &stillConfig = src->config->at(1);
-		stillConfig.pixelFormat = PixelFormat::fromString("RGB888");
+		stillConfig.pixelFormat = PixelFormat::fromString("BGR888");
 		stillConfig.size.width = 4056;
 		stillConfig.size.height = 3040;
 		stillConfig.bufferCount = 1;
 		
 		if (src->config->validate() == CameraConfiguration::Invalid) {
 			std::cout << "Still Capture couldn't set" << std::endl;
+			std::cout << stillConfig.toString() << std::endl;
 		}
 	}
 
