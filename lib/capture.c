@@ -69,8 +69,7 @@ static toff_t tiffSeekProc(thandle_t fd, toff_t off, int whence) {
     else if (whence == SEEK_CUR) new_pos += off;
     else if (whence == SEEK_END) new_pos = buffer->size + off;
 
-    // The restrictive check is now removed. We only check against capacity.
-    if (new_pos < 0 || new_pos > (toff_t)buffer->capacity) {
+    if (new_pos > (toff_t)buffer->capacity) {
         return (toff_t)-1;
     }
 
