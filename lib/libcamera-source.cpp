@@ -336,6 +336,7 @@ static void libcamera_source_still_process(libcamera_source *src)
         memcpy(buffer.color_correction_matrix, identity_matrix, sizeof(identity_matrix));
     }
 
+    print_still_buffer_info(&buffer);
 
     if(src->still.capture_ready_cb)
         src->still.capture_ready_cb(src->still.capture_ready_data, &buffer);
