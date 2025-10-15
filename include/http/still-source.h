@@ -28,20 +28,6 @@ struct still_buffer {
     struct timeval timestamp;
     bool error;
     void *mem;
-
-    // Essential image geometry info
-    unsigned int width;
-    unsigned int height;
-    unsigned int stride; // CRITICAL for handling padded buffers from libcamera
-    uint32_t pixelformat;
-
-    // --- CRITICAL RAW METADATA for PATHOLOGY DATASET ---
-    // These fields are NON-NEGOTIABLE for correct color reproduction.
-    unsigned int bit_depth;               // e.g., 12 for 12-bit data
-    unsigned int black_level[4];          // Sensor's black point for each color channel
-    unsigned int white_level;             // Sensor's saturation point
-    float white_balance_gains[3];         // To correct the color cast of the light source
-    float color_correction_matrix[9];     // To convert sensor colors to standard sRGB colors
 };
 
 struct still_source_ops {
