@@ -1,7 +1,8 @@
 /*
  * SPDX-License-Identifier: LGPL-2.1-or-later
  *
- * An HTTP server to trigger still captures and serve them as DNG files.
+ * An HTTP server to trigger still captures and serve them as PNG files.
+ * This version requests processed RGB from libcamera and encodes it to PNG.
  *
  * Copyright (C) 2025 Yasin Tunçer
  */
@@ -19,143 +20,48 @@
 #include <unistd.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <tiffio.h>
-#include <linux/videodev2.h>
 
 #include "capture.h"
 #include "still-source.h"
 
-// libcamera C++ interface (provided by another object file)
+// Define this in one C file before including the header
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
+
+// libcamera C++ interface
 extern struct still_source *libcamera_get_still_source(struct video_source *s);
 extern void libcamera_still_source_set_callback(struct still_source *ssrc,
                                                 void (*cb)(void *, struct still_buffer *),
                                                 void *data);
 
-// A structure to manage an in-memory buffer for libtiff
-typedef struct {
-    uint8_t *data;
-    tsize_t size;
-    tsize_t pos;
-    tsize_t capacity;
-} TiffMemoryBuffer;
-
 // Forward declarations for static functions
 static void *client_thread_func(void *arg);
 static void *http_server_thread(void *arg);
 static void still_capture_ready_cb(void *data, struct still_buffer *buffer);
-static void* convert_raw_to_dng_memory(const struct still_buffer* raw_buffer, tsize_t* dng_size);
+static unsigned char* convert_rgb_to_png_memory(const struct still_buffer* raw_buffer, int* png_size);
 
-// In-memory I/O handlers for libtiff
-static tsize_t tiffWriteProc(thandle_t fd, tdata_t buf, tsize_t size) {
-    TiffMemoryBuffer* buffer = (TiffMemoryBuffer*)fd;
-    if (buffer->pos + size > buffer->capacity) {
-        tsize_t new_capacity = (buffer->pos + size) * 2;
-        uint8_t *new_data = (uint8_t*)realloc(buffer->data, new_capacity);
-        if (!new_data) return 0;
-        buffer->data = new_data;
-        buffer->capacity = new_capacity;
-    }
-    memcpy(buffer->data + buffer->pos, buf, size);
-    buffer->pos += size;
-    if (buffer->pos > buffer->size) buffer->size = buffer->pos;
-    return size;
-}
-
-static toff_t tiffSeekProc(thandle_t fd, toff_t off, int whence) {
-    TiffMemoryBuffer* buffer = (TiffMemoryBuffer*)fd;
-    toff_t new_pos = buffer->pos;
-
-    if (whence == SEEK_SET)      new_pos = off;
-    else if (whence == SEEK_CUR) new_pos += off;
-    else if (whence == SEEK_END) new_pos = buffer->size + off;
-
-    if (new_pos > (toff_t)buffer->capacity) {
-        return (toff_t)-1;
-    }
-
-    buffer->pos = new_pos;
-    return buffer->pos;
-}
-
-static tsize_t tiffReadProc(thandle_t fd, tdata_t buf, tsize_t size) { (void)fd; (void)buf; (void)size; return 0; }
-static int tiffCloseProc(thandle_t fd) { (void)fd; return 0; }
-static toff_t tiffSizeProc(thandle_t fd) { return ((TiffMemoryBuffer*)fd)->size; }
 
 /**
- * @brief Converts a raw buffer with metadata into an in-memory DNG file.
- * The caller is responsible for freeing the returned buffer.
+ * @brief Encodes a raw RGB buffer into an in-memory PNG file using stb_image_write.
+ * The caller is responsible for freeing the returned buffer with stbi_image_free().
  */
-static void* convert_raw_to_dng_memory(const struct still_buffer* raw_buffer, tsize_t* dng_size) {
-    if (!raw_buffer || !raw_buffer->mem || !dng_size) return NULL;
+static unsigned char* convert_rgb_to_png_memory(const struct still_buffer* rgb_buffer, int* png_size) {
+    if (!rgb_buffer || !rgb_buffer->mem || !png_size) return NULL;
 
-    TiffMemoryBuffer tiff_buffer = {0};
-    tiff_buffer.capacity = raw_buffer->bytesused + 8192; // Raw data + metadata headroom
-    tiff_buffer.data = (uint8_t*)malloc(tiff_buffer.capacity);
-    if (!tiff_buffer.data) return NULL;
-
-    TIFF* tif = TIFFClientOpen("in-memory-dng", "w", (thandle_t)&tiff_buffer,
-                               tiffReadProc, tiffWriteProc, tiffSeekProc,
-                               tiffCloseProc, tiffSizeProc, NULL, NULL);
-    if (!tif) {
-        free(tiff_buffer.data);
-        return NULL;
-    }
-
-    // --- Start of DNG Tag Configuration ---
-
-    TIFFSetField(tif, TIFFTAG_SUBFILETYPE, 0);
-    TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, raw_buffer->width);
-    TIFFSetField(tif, TIFFTAG_IMAGELENGTH, raw_buffer->height);
-    TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, raw_buffer->bit_depth);
-    TIFFSetField(tif, TIFFTAG_COMPRESSION, COMPRESSION_NONE);
-    TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_CFA);
-    TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, 1);
-    TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
-    TIFFSetField(tif, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
-    TIFFSetField(tif, TIFFTAG_MAKE, "picam");
-    TIFFSetField(tif, TIFFTAG_MODEL, "IMX477");
-
-    uint16_t dng_version[] = {1, 4, 0, 0};
-    TIFFSetField(tif, TIFFTAG_DNGVERSION, dng_version);
-
-    // FIX 1: Make the pixel format check more robust using the hex value from logs
-    uint16_t cfa_pattern[4] = {0, 1, 1, 2}; // Default RGGB
-    if (raw_buffer->pixelformat == 0x32314742) { // This is 'BG12' from your log
-        // BGGR Pattern: 2=B, 1=G, 0=R -> [2, 1, 1, 0]
-        cfa_pattern[0] = 2; cfa_pattern[1] = 1; cfa_pattern[2] = 1; cfa_pattern[3] = 0;
-    }
-    TIFFSetField(tif, TIFFTAG_CFAPATTERN, 4, cfa_pattern);
-
-    uint32_t black_levels[4];
-    for(int i = 0; i < 4; ++i) black_levels[i] = raw_buffer->black_level[i];
-    TIFFSetField(tif, TIFFTAG_BLACKLEVEL, 4, black_levels);
-
-    uint32_t white_level[] = {raw_buffer->white_level};
-    TIFFSetField(tif, TIFFTAG_WHITELEVEL, 1, white_level);
-
-    float as_shot_neutral[3]; // DNG stores 1/gain for white balance
-    as_shot_neutral[0] = 1.0f / raw_buffer->white_balance_gains[0];
-    as_shot_neutral[1] = 1.0f / raw_buffer->white_balance_gains[1];
-    as_shot_neutral[2] = 1.0f / raw_buffer->white_balance_gains[2];
-    TIFFSetField(tif, TIFFTAG_ASSHOTNEUTRAL, 3, as_shot_neutral);
-
-    TIFFSetField(tif, TIFFTAG_COLORMATRIX1, 9, raw_buffer->color_correction_matrix);
-    TIFFSetField(tif, TIFFTAG_CALIBRATIONILLUMINANT1, 21); // D65 Illuminant
-
-    if (TIFFWriteRawStrip(tif, 0, raw_buffer->mem, raw_buffer->bytesused) < 0) {
-        TIFFClose(tif);
-        free(tiff_buffer.data);
-        return NULL;
-    }
-
-    // This call finalizes the directory and is where the original error occurred.
-    TIFFClose(tif);
-    
-    *dng_size = tiff_buffer.size;
-    return tiff_buffer.data;
+    // stbi_write_png_to_mem does all the heavy lifting.
+    // It allocates memory, writes the PNG data, and returns the pointer and size.
+    int stride_bytes = rgb_buffer->width * 3; // For RGB888, each pixel is 3 bytes
+    return stbi_write_png_to_mem(
+        (const unsigned char*)rgb_buffer->mem,
+        stride_bytes,
+        rgb_buffer->width,
+        rgb_buffer->height,
+        3, // 3 components: R, G, B
+        png_size
+    );
 }
 
-// Callback invoked by libcamera when a still frame is ready.
+// Callback invoked by libcamera when a still RGB frame is ready.
 static void still_capture_ready_cb(void *data, struct still_buffer *buffer_from_camera) {
     struct http_client_session *session = (struct http_client_session *)data;
     void *data_copy = NULL;
@@ -184,8 +90,8 @@ static void still_capture_ready_cb(void *data, struct still_buffer *buffer_from_
 static void *client_thread_func(void *arg) {
     struct http_client_session *session = (struct http_client_session *)arg;
     char request_buf[2048] = {0};
-    void *dng_data = NULL;
-    tsize_t dng_size = 0;
+    unsigned char *png_data = NULL;
+    int png_size = 0;
 
     if (read(session->fd, request_buf, sizeof(request_buf) - 1) <= 0) {
         goto cleanup;
@@ -207,18 +113,18 @@ static void *client_thread_func(void *arg) {
                 }
                 
                 if (session->captured_data.mem && !session->captured_data.error) {
-                    dng_data = convert_raw_to_dng_memory(&session->captured_data, &dng_size);
-                    if (dng_data) {
+                    png_data = convert_rgb_to_png_memory(&session->captured_data, &png_size);
+                    if (png_data) {
                         char http_header[256];
                         int len = snprintf(http_header, sizeof(http_header),
                                            "HTTP/1.1 200 OK\r\n"
-                                           "Content-Type: image/dng\r\n"
-                                           "Content-Disposition: attachment; filename=\"capture.dng\"\r\n"
-                                           "Content-Length: %zu\r\n\r\n", (size_t)dng_size);
+                                           "Content-Type: image/png\r\n"
+                                           "Content-Disposition: attachment; filename=\"capture.png\"\r\n"
+                                           "Content-Length: %d\r\n\r\n", png_size);
                         write(session->fd, http_header, len);
-                        write(session->fd, dng_data, dng_size);
+                        write(session->fd, png_data, png_size);
                     } else {
-                        const char *response = "HTTP/1.1 500 Internal Server Error\r\n\r\nDNG conversion failed";
+                        const char *response = "HTTP/1.1 500 Internal Server Error\r\n\r\nPNG conversion failed";
                         write(session->fd, response, strlen(response));
                     }
                 } else {
@@ -236,7 +142,7 @@ static void *client_thread_func(void *arg) {
 cleanup:
     close(session->fd);
     if (session->captured_data.mem) free(session->captured_data.mem);
-    if (dng_data) free(dng_data);
+    if (png_data) stbi_image_free(png_data); // Use the correct free function for stb
     pthread_mutex_destroy(&session->mtx);
     pthread_cond_destroy(&session->cond);
     free(session);
