@@ -56,6 +56,4 @@ int still_source_alloc_buffer(struct still_source *src);
 int still_source_free_buffer(struct still_source *src);
 int still_source_capture(struct still_source *src);
 struct still_buffer *still_source_get_buffer(struct still_source *src);
-
-void print_still_buffer_info(const struct still_buffer *buffer);
 #endif /* __STILL_SOURCE_H__ */
