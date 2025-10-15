@@ -47,10 +47,6 @@ static int send_all(int fd, const void *buf, size_t len) {
     return 0;
 }
 
-/**
- * @brief The callback function executed by libcamera when a still frame is ready.
- * **ÖNEMLİ DEĞİŞİKLİK:** Bu fonksiyon artık gelen buffer'daki veriyi kopyalar.
- */
 static void still_capture_ready_cb(void *data, struct still_buffer *buffer_from_camera) {
     struct http_client_session *session = (struct http_client_session *)data;
     void *data_copy = NULL;
@@ -67,19 +63,17 @@ static void still_capture_ready_cb(void *data, struct still_buffer *buffer_from_
 
     pthread_mutex_lock(&session->mtx);
 
-    // Kopyalanan veriyi ve bilgilerini session yapısına aktar
     if (data_copy) {
-        session->buffer_data = data_copy; // Kopyanın adresini sakla
-        session->captured_data = *buffer_from_camera; // Diğer bilgileri kopyala
-        session->captured_data.mem = data_copy; // Mem pointer'ını kopyanın adresi olarak ayarla
+        session->buffer_data = data_copy; 
+        session->captured_data = *buffer_from_camera; 
+        session->captured_data.mem = data_copy; 
     } else {
-        // Bellek ayrılamadı veya kamera hatası var
         session->buffer_data = NULL;
         session->captured_data.error = true;
     }
     
     session->capture_complete = true;
-    pthread_cond_signal(&session->cond); // Client thread'ini uyandır
+    pthread_cond_signal(&session->cond); 
     pthread_mutex_unlock(&session->mtx);
 }
 
@@ -143,7 +137,7 @@ cleanup:
     printf("Connection closed: fd %d\n", session->fd);
     close(session->fd);
     if (session->buffer_data) {
-        free(session->buffer_data); // Kopyalanan veriyi serbest bırak
+        free(session->buffer_data); 
     }
     pthread_mutex_destroy(&session->mtx);
     pthread_cond_destroy(&session->cond);
