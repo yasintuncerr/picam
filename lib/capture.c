@@ -142,7 +142,7 @@ static void *client_thread_func(void *arg) {
 cleanup:
     close(session->fd);
     if (session->captured_data.mem) free(session->captured_data.mem);
-    if (png_data) stbi_image_free(png_data); // Use the correct free function for stb
+    if (png_data) free(png_data);
     pthread_mutex_destroy(&session->mtx);
     pthread_cond_destroy(&session->cond);
     free(session);
