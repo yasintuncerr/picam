@@ -269,7 +269,6 @@ static void libcamera_source_still_process(libcamera_source *src)
     Request *request = src->still.completed_requests.front();
     src->still.completed_requests.pop();
 
-    
     const ControlList &metadata = request->metadata();
 
     FrameBuffer *fb = request->buffers().begin()->second;
@@ -277,14 +276,12 @@ static void libcamera_source_still_process(libcamera_source *src)
 
     struct still_buffer buffer;
 
-    // Basic Buffer Information
     buffer.size = fb->planes()[0].length;
     buffer.bytesused = fb->metadata().planes()[0].bytesused;
     buffer.timestamp.tv_sec = fb->metadata().timestamp / 1000000;
     buffer.timestamp.tv_usec = fb->metadata().timestamp % 1000000;
     buffer.error = false;
 
-    // Get Mapped Memory
     auto span = src->still.mapped_buffers_.find(fb);
     if (span != src->still.mapped_buffers_.end()) {
         buffer.mem = span->second.data();
@@ -296,28 +293,20 @@ static void libcamera_source_still_process(libcamera_source *src)
     buffer.width = cfg.size.width;
     buffer.height = cfg.size.height;
     buffer.pixelformat = cfg.pixelFormat.fourcc();
-    buffer.bit_depth = 12; 
+    buffer.bit_depth = 12;
 
 
-    // Black Levels
-    auto blackLevels = metadata.get<Span<const int32_t>>(controls::SensorBlackLevels);
-    if (blackLevels && blackLevels->size() == 4) {
-        for(size_t i = 0; i < 4; ++i) buffer.black_levels[i] = (*blackLevels)[i];
+     auto blackLevels = metadata.get<Span<const int32_t, 4>>(controls::SensorBlackLevels);
+    if (blackLevels) {
+        for(size_t i = 0; i < 4; ++i) buffer.black_level[i] = (*blackLevels)[i];
     } else {
-        for(size_t i = 0; i < 4; ++i) buffer.black_levels[i] = 0; 
+        for(size_t i = 0; i < 4; ++i) buffer.black_level[i] = 0; 
     }
 
-	// White Level
-    auto whiteLevel = metadata.get<int32_t>(controls::SensorWhiteLevel);
-    if (whiteLevel) {
-        buffer.white_level = *whiteLevel;
-    } else {
-        buffer.white_level = (1 << buffer.bit_depth) - 1;
-    }
+     buffer.white_level = (1 << buffer.bit_depth) - 1;
 
-    // White Balance Gains
-    auto wb_gains = metadata.get<Span<const float>>(controls::ColourGains);
-    if (wb_gains && wb_gains->size() == 2) {
+     auto wb_gains = metadata.get<Span<const float, 2>>(controls::ColourGains);
+    if (wb_gains) {
         buffer.white_balance_gains[0] = (*wb_gains)[0]; 
         buffer.white_balance_gains[1] = 1.0f;           
         buffer.white_balance_gains[2] = (*wb_gains)[1]; 
@@ -327,15 +316,15 @@ static void libcamera_source_still_process(libcamera_source *src)
         buffer.white_balance_gains[2] = 1.0f;
     }
 
-    // Color Correction Matrix
-    auto ccm = metadata.get<Span<const float>>(controls::ColourCorrectionMatrix);
-    if (ccm && ccm->size() == 9) {
+    auto ccm = metadata.get<Span<const float, 9>>(controls::ColourCorrectionMatrix);
+    if (ccm) {
         for(size_t i = 0; i < 9; ++i) buffer.color_correction_matrix[i] = (*ccm)[i];
     } else {
-        static constexpr float identity_matrix[9] = { 1,0,0, 0,1,0, 0,0,1 };
+        static const float identity_matrix[9] = { 1,0,0, 0,1,0, 0,0,1 };
         memcpy(buffer.color_correction_matrix, identity_matrix, sizeof(identity_matrix));
     }
 
+    
     print_still_buffer_info(&buffer);
 
     if(src->still.capture_ready_cb)
