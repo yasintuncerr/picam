@@ -387,8 +387,10 @@ static int libcamera_source_video_set_format(struct video_source *s,
 		
 		if (src->config->validate() == CameraConfiguration::Invalid) {
 			std::cout << "Still Capture couldn't set" << std::endl;
-			std::cout << stillConfig.toString() << std::endl;
 		}
+		std::cout << "Still Capture configured as: " << std::endl;
+		std::cout << stillConfig.toString() << std::endl;
+
 	}
 
 	return 0;
