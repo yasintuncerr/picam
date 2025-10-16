@@ -31,12 +31,10 @@ struct still_buffer {
 };
 
 struct still_source_ops {
-    void(*destroy)(struct still_source *src);
     int(*set_format)(struct still_source *src, struct v4l2_pix_format *fmt);
     int(*alloc_buffer)(struct still_source *src);
     int(*free_buffer)(struct still_source *src);
     int(*capture)(struct still_source *src);
-    struct still_buffer *(*get_buffer)(struct still_source *src);
 };
 
 struct still_source {
@@ -51,6 +49,5 @@ int still_source_set_format(struct still_source *src, struct v4l2_pix_format *fm
 int still_source_alloc_buffer(struct still_source *src);
 int still_source_free_buffer(struct still_source *src);
 int still_source_capture(struct still_source *src);
-struct still_buffer *still_source_get_buffer(struct still_source *src);
 
 #endif /* __STILL_SOURCE_H__ */
