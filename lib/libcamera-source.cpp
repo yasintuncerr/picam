@@ -38,19 +38,27 @@ extern "C" {
 using namespace libcamera;
 using namespace std::placeholders;
 
-#define to_libcamera_source(s) container_of(s, struct libcamera_source, video_src)
-
+#define to_libcamera_source(ptr, member) container_of(ptr, struct libcamera_source, member)
+	
 typedef void(*still_capture_ready_t)(void *data, struct still_buffer *buffer);
 
+
+/*
+ * libcamera source structure
+ */
 struct libcamera_source {
 	struct video_source video_src;
+#ifdef STILL_CAPTURE
 	struct still_source still_src;
-
+#endif
+	/* Common resources */
 	std::unique_ptr<CameraManager> cm;
 	std::unique_ptr<CameraConfiguration> config;
 	std::shared_ptr<Camera> camera;
 	ControlList controls;
-
+	
+	int pfds[2];
+	
 	/* Video Stream resources */
 	struct {
 		FrameBufferAllocator *allocator;
@@ -59,10 +67,10 @@ struct libcamera_source {
 		MjpegEncoder *encoder;
 		std::unordered_map<FrameBuffer *, Span<uint8_t>> mapped_buffers_;
 		struct video_buffer_set buffers;
-		int64_t latest_exposure_time;
-    	float latest_analogue_gain;
+		bool stream_on;
 	} video;
 
+#ifdef STILL_CAPTURE
 	/* Still Stream resources */
 	struct {
 		FrameBufferAllocator *allocator;
@@ -71,20 +79,27 @@ struct libcamera_source {
 		bool capture_in_progress;
 		still_capture_ready_t capture_ready_cb;
 		void *capture_ready_data;
+		std::unique_ptr<DNGWriter> dngWriter;
 	} still;
-
-	int pfds[2];
-	
-	
-
+#endif
 
 	void mapBuffer(const std::unique_ptr<FrameBuffer> &buffer, bool is_still);
 	void requestComplete(Request *request);
 	void outputReady(void *mem, size_t bytesused, int64_t timestamp, unsigned int cookie);
+
+#ifdef STILL_CAPTURE
+	
 	int captureStill();
-	bool streaming;
+	void DNGOutputReady(DngBufferPtr buffer);
+	// DNG Output Ready Callback will be handled like output ready of MJPEG Encoder
+#endif
+
 };
 
+/*--------------------------------------------------------------------------------
+ * ----- Implementation of libcamera source Member Functions ---- *
+ * -------------------------------------------------------------------------------
+ */
 void libcamera_source::mapBuffer(const std::unique_ptr<FrameBuffer> &buffer, bool is_still)
 {
 	size_t buffer_size = 0;
@@ -121,35 +136,13 @@ void libcamera_source::requestComplete(Request *request)
 		return;
 	}
 
-
-	const ControlList &metadata = request->metadata();
 	bool is_still = request->findBuffer(config->at(1).stream()) != nullptr;
 	bool is_video = request->findBuffer(config->at(0).stream()) != nullptr;
 	if(is_video) {
-		auto exp = metadata.get(controls::ExposureTime);
-        if (exp)
-            this->video.latest_exposure_time = *exp;
-
-        auto gain = metadata.get(controls::AnalogueGain);
-        if (gain)
-            this->video.latest_analogue_gain = *gain;
 		video.completed_requests.push(request);
 		write(pfds[1], "v", 1);
 	} else if (is_still) {
-
 		still.completed_requests.push(request);
-		printf("Video Exposure: %lldus, Gain: %.2f\n",
-			  (long long)this->video.latest_exposure_time,
-			  this->video.latest_analogue_gain);
-		auto exp = metadata.get(controls::ExposureTime);
-		if (exp)
-			printf("  Still Exposure: %lldus\n", (long long)*exp);
-
-		auto gain = metadata.get(controls::AnalogueGain);
-		if (gain)
-			printf("  Still Gain: %.2f\n", *gain);
-
-		
 		write(pfds[1], "s", 1);
 	} else {
 		std::cerr << "requestComplete: unknown stream" << std::endl;
@@ -169,14 +162,13 @@ void libcamera_source::outputReady(void *mem, size_t bytesused, int64_t timestam
 	video_src.handler(video_src.handler_data, &video_src, &buffer);
 }
 
+#ifdef STILL_CAPTURE
 int libcamera_source::captureStill()
 {
 	std::unique_ptr<Request> request = camera->createRequest();
 	if (!request) {
 		return -ENOMEM;
 	}
-	request->controls().set(controls::AeEnable, true);
-    request->controls().set(controls::AwbEnable, true);
 		
 	FrameBuffer *buffer_to_use = still.mapped_buffers_.begin()->first;
 	Stream *stream = config->at(1).stream();
@@ -197,9 +189,49 @@ int libcamera_source::captureStill()
 	return 0;
 }
 
+void libcamera_source::DNGOutputReady(DngBufferPtr buffer)
+{
+    if (still.capture_ready_cb) {
+        still.capture_ready_cb(still.capture_ready_data, buffer.get());
+    }
+    still.capture_in_progress = false;
+}
+
+#endif
+
+
+/* --------------------------------------------------------------------------------
+ * ----- Static Function Declarations ---- *
+ * --------------------------------------------------------------------------------
+*/
+
+/* Forward declarations of libcamera source Static Functions */
 static void libcamera_source_video_process(libcamera_source *src);
 static void libcamera_source_still_process(libcamera_source *src);
+static void process_camera_events(void *d);
 
+/* Video Source Static Functions  Declarations */
+static void libcamera_source_video_destroy(struct video_source *s);
+static void libcamera_source_video_set_format(struct video_source *s, struct v4l2_pix_format *fmt);
+static int libcamera_source_video_set_frame_rate(struct video_source *s, unsigned int fps);
+static int libcamera_source_video_alloc_buffers(struct video_source *s, unsigned int nbufs);
+static int libcamera_source_video_export_buffers(struct video_source *s, struct video_buffer_set **bufs);
+static int libcamera_source_video_import_buffers(struct video_source *s, struct video_buffer_set *buffers);
+
+
+/* Still Source Static Functions  Declarations */
+#ifdef STILL_CAPTURE
+static int libcamera_source_still_set_format(struct still_source *s, struct v4l2_pix_format *fmt);
+static int libcamera_source_still_alloc_buffer(struct still_source *s);
+static int libcamera_source_still_free_buffer(struct still_source *s);
+static int libcamera_source_still_capture(struct still_source *s);
+#endif
+
+
+/*--------------------------------------------------------------------------------
+ * ----- Implementation of libcamera source Static Functions ---- *
+ * -------------------------------------------------------------------------------
+ */
 static void process_camera_events(void *d)
 {
 	struct libcamera_source *src = (struct libcamera_source *)d;
@@ -208,11 +240,11 @@ static void process_camera_events(void *d)
 
 	read(src->pfds[0], &signal_char, 1);
 
-	if(signal_char == 'v') {
-		libcamera_source_video_process(src);
-	} else if (signal_char == 's') {
-		libcamera_source_still_process(src);
-	}
+	if(signal_char == 'v') libcamera_source_video_process(src);
+
+#ifdef STILL_CAPTURE
+	else if (signal_char == 's') libcamera_source_still_process(src);
+#endif
 }
 
 static void libcamera_source_video_process(libcamera_source *src)
@@ -266,7 +298,7 @@ static void libcamera_source_video_process(libcamera_source *src)
 	src->video_src.handler(src->video_src.handler_data, &src->video_src, &buffer);
 }
 
-
+#ifdef STILL_CAPTURE
 static void libcamera_source_still_process(libcamera_source *src)
 {
     if (src->still.completed_requests.empty())
@@ -275,86 +307,43 @@ static void libcamera_source_still_process(libcamera_source *src)
     Request *request = src->still.completed_requests.front();
     src->still.completed_requests.pop();
 
-    struct still_buffer buffer = {}; // Initialize to zero
-    buffer.error = true; // Assume error until success
-
     Stream *stream = src->config->at(1).stream();
-    const StreamConfiguration &config = stream->configuration();
-    const ControlList &metadata = request->metadata();
     FrameBuffer *frameBuffer = request->buffers().at(stream);
     
-    auto span = src->still.mapped_buffers_.find(frameBuffer);
-    if (span == src->still.mapped_buffers_.end()) {
+    auto span_it = src->still.mapped_buffers_.find(frameBuffer);
+    if (span_it == src->still.mapped_buffers_.end()) {
         std::cerr << "Could not find mapped buffer for DNG writing" << std::endl;
-        delete request;
-        src->still.capture_in_progress = false;
+        // Hata durumunda C-stili callback'i yine de çağırmak önemlidir.
+        struct still_buffer buffer = {};
+        buffer.error = true;
         if (src->still.capture_ready_cb)
             src->still.capture_ready_cb(src->still.capture_ready_data, &buffer);
+            
+        delete request;
+        src->still.capture_in_progress = false;
         return;
     }
-    void *data = span->second.data();
 
-    // Create a temporary file on RAM disk
 
-    char temp_path[256];
-
-    snprintf(temp_path, sizeof(temp_path), "/dev/shm/capture_%d_%ld.dng", 
-
-             getpid(), time(NULL));
-
+    const StreamConfiguration &config = stream->configuration();
+    const ControlList &metadata = request->metadata();
+    void *data = span_it->second.data();
     
-
-    // Write DNG file using DNGWriter
-
-    int ret = DNGWriter::write(temp_path, src->camera.get(), config, 
-
-                              metadata, frameBuffer, data);
-
-    if (ret == 0) {
-
-        // Read the file into memory
-
-        FILE *fp = fopen(temp_path, "rb");
-
-        if (fp) {
-            fseek(fp, 0, SEEK_END);
-            size_t size = ftell(fp);
-            fseek(fp, 0, SEEK_SET);
-            buffer.mem = malloc(size);
-
-            if (buffer.mem) {
-
-                fread(buffer.mem, 1, size, fp);
-
-                buffer.bytesused = size;
-
-                buffer.error = false;
-
-                buffer.timestamp.tv_sec = frameBuffer->metadata().timestamp / 1000000;
-
-                buffer.timestamp.tv_usec = frameBuffer->metadata().timestamp % 1000000;
-
-            }
-
-            fclose(fp);
-
-        }
-
-        unlink(temp_path);
-    }
-
-    if (src->still.capture_ready_cb)
-
-        src->still.capture_ready_cb(src->still.capture_ready_data, &buffer);
-
-    src->still.capture_in_progress = false;
-
-    delete request;
-
+	std::thread([src, camera = src->camera, config, metadata, frameBuffer, data, request]() {
+		src->still.dngWriter->writeToBuffer(camera.get(), config, metadata, frameBuffer, data);
+		delete request;
+	}).detach();
 }
-static void libcamera_source_destroy(struct video_source *s)
+
+#endif
+
+/* --------------------------------------------------------------------------------
+ * ----- Video Source Static Functions ---- *
+ * -------------------------------------------------------------------------------
+ */
+static void libcamera_source_video_destroy(struct video_source *s)
 {
-	struct libcamera_source *src = to_libcamera_source(s);
+	struct libcamera_source *src = to_libcamera_source(s, video_src);
 
 	src->camera->requestCompleted.disconnect(src);
 
@@ -368,11 +357,10 @@ static void libcamera_source_destroy(struct video_source *s)
 	delete src;
 }
 
-
 static int libcamera_source_video_set_format(struct video_source *s,
 				       struct v4l2_pix_format *fmt)
 {
-	struct libcamera_source *src = to_libcamera_source(s);
+	struct libcamera_source *src = to_libcamera_source(s, video_src);
 	StreamConfiguration &streamConfig = src->config->at(0);
 	__u32 chosen_pixelformat = fmt->pixelformat;
 
@@ -419,27 +407,12 @@ static int libcamera_source_video_set_format(struct video_source *s,
 	/* TODO: Can we use libcamera helpers to get image size / stride? */
 	fmt->sizeimage = fmt->width * fmt->height * 2;
 
-	if (src->config) {
-		StreamConfiguration &stillConfig = src->config->at(1);
-		stillConfig.pixelFormat = PixelFormat::fromString("SBGGR12");
-		stillConfig.size.width = 4056;
-		stillConfig.size.height = 3040;
-		stillConfig.bufferCount = 1;
-		
-		if (src->config->validate() == CameraConfiguration::Invalid) {
-			std::cout << "Still Capture couldn't set" << std::endl;
-		}
-		std::cout << "Still Capture configured as: " << std::endl;
-		std::cout << stillConfig.toString() << std::endl;
-
-	}
-
 	return 0;
 }
 
 static int libcamera_source_video_set_frame_rate(struct video_source *s, unsigned int fps)
 {
-	struct libcamera_source *src = to_libcamera_source(s);
+	struct libcamera_source *src = to_libcamera_source(s, video_src);
 	int64_t frame_time = 1000000 / fps;
 
 	src->controls.set(controls::FrameDurationLimits,
@@ -451,7 +424,7 @@ static int libcamera_source_video_set_frame_rate(struct video_source *s, unsigne
 static int libcamera_source_video_export_buffers(struct video_source *s,
 					   struct video_buffer_set **bufs)
 {
-	struct libcamera_source *src = to_libcamera_source(s);
+	struct libcamera_source *src = to_libcamera_source(s, video_src);
 	Stream *stream = src->config->at(0).stream();
 	const std::vector<std::unique_ptr<FrameBuffer>> &buffers = src->video.allocator->buffers(stream);
 	struct video_buffer_set *vid_buf_set;
@@ -483,7 +456,7 @@ static int libcamera_source_video_export_buffers(struct video_source *s,
 static int libcamera_source_video_import_buffers(struct video_source *s,
 					   struct video_buffer_set *buffers)
 {
-	struct libcamera_source *src = to_libcamera_source(s);
+	struct libcamera_source *src = to_libcamera_source(s, video_src);
 
 	for (unsigned int i = 0; i < buffers->nbufs; i++)
 		src->video.buffers.buffers[i].mem = buffers->buffers[i].mem;
@@ -494,7 +467,7 @@ static int libcamera_source_video_import_buffers(struct video_source *s,
 static int libcamera_source_video_queue_buffer(struct video_source *s,
 					 struct video_buffer *buf)
 {
-	struct libcamera_source *src = to_libcamera_source(s);
+	struct libcamera_source *src = to_libcamera_source(s, video_src);
 
 	for (std::unique_ptr<Request> &r : src->video.requests) {
 		if (r->cookie() == buf->index) {
@@ -508,9 +481,9 @@ static int libcamera_source_video_queue_buffer(struct video_source *s,
 	return 0;
 }
 
-static int libcamera_source_free_buffers(struct video_source *s)
+static int libcamera_source_video_free_buffers(struct video_source *s)
 {
-	struct libcamera_source *src = to_libcamera_source(s);
+	struct libcamera_source *src = to_libcamera_source(s, video_src);
 	Stream *stream = src->config->at(0).stream();
 
 	for (auto &[buf, span] : src->video.mapped_buffers_)
@@ -522,25 +495,17 @@ static int libcamera_source_free_buffers(struct video_source *s)
 	delete src->video.allocator;
 	src->video.allocator = nullptr;
 
-	stream = src->config->at(1).stream();
-	if (stream) {
-		for (auto &[buf, span] : src->still.mapped_buffers_)
-			munmap(span.data(), span.size());
-		
-		src->still.mapped_buffers_.clear();
 
-		src->still.allocator->free(stream);
-		delete src->still.allocator;
-		src->still.allocator = nullptr;
-	}
+#ifdef STILL_CAPTURE
+	libcamera_source_still_free_buffer(&src->still_src);
+#endif
 
 	return 0;
 }
 
-
-static int libcamera_source_stream_on(struct video_source *s)
+static int libcamera_source_video_stream_on(struct video_source *s)
 {
-	struct libcamera_source *src = to_libcamera_source(s);
+	struct libcamera_source *src = to_libcamera_source(s, video_src);
 	Stream *stream = src->config->at(0).stream();
 	int ret;
 
@@ -587,13 +552,13 @@ static int libcamera_source_stream_on(struct video_source *s)
 	events_watch_fd(src->video_src.events, src->pfds[0], EVENT_READ,
 			process_camera_events, src);
 
+	src->video.stream_on = true;
 	return 0;
 }
 
-
-static int libcamera_source_stream_off(struct video_source *s)
+static int libcamera_source_video_stream_off(struct video_source *s)
 {
-	struct libcamera_source *src = to_libcamera_source(s);
+	struct libcamera_source *src = to_libcamera_source(s, video_src);
 
 	src->camera->stop();
 	events_unwatch_fd(src->video_src.events, src->pfds[0], EVENT_READ);
@@ -613,15 +578,18 @@ static int libcamera_source_stream_off(struct video_source *s)
 	 * this setting.
 	 */
 	src->video_src.type = VIDEO_SOURCE_DMABUF;
+	src->video.stream_on = false;
+#ifdef STILL_CAPTURE
+	libcamera_source_still_capture_off(&src->still_src);
+#endif
+
 
 	return 0;
 }
 
-
-
-static int libcamera_source_alloc_buffers(struct video_source *s, unsigned int nbufs)
+static int libcamera_source_video_alloc_buffers(struct video_source *s, unsigned int nbufs)
 {
-	struct libcamera_source *src = to_libcamera_source(s);
+	struct libcamera_source *src = to_libcamera_source(s, video_src);
 	StreamConfiguration &streamConfig = src->config->at(0);
 	int ret;
 
@@ -664,10 +632,92 @@ static int libcamera_source_alloc_buffers(struct video_source *s, unsigned int n
 		src->video.buffers.buffers[i].dmabuf = -1;
 	}
 
+#ifdef STILL_CAPTURE
+	return libcamera_source_still_alloc_buffer(&src->still_src);
+#endif
+
+	return ret;
+}
+
+/* Video source operations */
+static const struct video_source_ops libcamera_source_video_ops = {
+	.destroy 		= libcamera_source_video_destroy,
+	.set_format 	= libcamera_source_video_set_format,
+	.set_frame_rate = libcamera_source_video_set_frame_rate,
+	.alloc_buffers 	= libcamera_source_video_alloc_buffers,
+	.export_buffers = libcamera_source_video_export_buffers,
+	.import_buffers = libcamera_source_video_import_buffers,
+	.free_buffers 	= libcamera_source_video_free_buffers,
+	.stream_on 		= libcamera_source_video_stream_on,
+	.stream_off 	= libcamera_source_video_stream_off,
+	.queue_buffer 	= libcamera_source_video_queue_buffer,
+	.fill_buffer 	= NULL,
+};
+
+
+
+/* --------------------------------------------------------------------------------
+ * ----- Still Source Static Functions ---- *
+ * -------------------------------------------------------------------------------
+ */
+#ifdef STILL_CAPTURE
+static int libcamera_source_still_free_buffer(struct still_source *s)
+{
+    struct libcamera_source *src = to_libcamera_source(s, still_src);
+    Stream *stream = src->config->at(1).stream();
+    
+    for (auto &[buf, span] : src->still.mapped_buffers_)
+        munmap(span.data(), span.size());
+    
+    src->still.mapped_buffers_.clear();
+    
+    if (src->still.allocator) {
+        src->still.allocator->free(stream);
+        delete src->still.allocator;
+        src->still.allocator = nullptr;
+    }
+    
+    // dngWriter'ı bu şekilde güvenle temizle
+    if (src->still.dngWriter) {
+        src->still.dngWriter.reset();
+    }
+    
+    return 0;
+}
+
+static int libcamera_source_still_set_format(struct still_source *s,
+				       struct v4l2_pix_format *fmt)
+{
+	struct libcamera_source *src = to_libcamera_source(s, still_src);
+	
+	StreamConfiguration &streamConfig = src->config->at(1);
+	__u32 chosen_pixelformat 	= fmt->pixelformat;
+	streamConfig.size.width 	= fmt->width;
+	streamConfig.size.height 	= fmt->height;
+	streamConfig.pixelFormat 	= PixelFormat(chosen_pixelformat);
+	
+	src->config->validate();
+	
+	fmt->width = streamConfig.size.width;
+	fmt->height = streamConfig.size.height;
+	fmt->pixelformat = streamConfig.pixelFormat.fourcc();
+	fmt->field = V4L2_FIELD_ANY;
+	
+	if (!src->still.dngWriter) {
+		src->still.dngWriter = std::make_unique<DNGWriter>();
+		src->still.dngWriter->setCallback(std::bind(&libcamera_source::DNGOutputReady, src, _1));
+	}
+	return 0;
+}
+
+static int libcamera_source_still_alloc_buffer(struct still_source *s)
+{
+	struct libcamera_source *src = to_libcamera_source(s, still_src);
 
 	if(src->config->at(1).stream()) {
 		src->still.allocator = new FrameBufferAllocator(src->camera);
-		ret = src->still.allocator->allocate(src->config->at(1).stream());
+		int ret = src->still.allocator->allocate(src->config->at(1).stream());
+		
 		if (ret < 0) {
 			std::cerr << "Failed to allocate still buffers: " << std::endl;
 			delete src->still.allocator;
@@ -676,43 +726,56 @@ static int libcamera_source_alloc_buffers(struct video_source *s, unsigned int n
 		}
 
 		const auto &still_buffers = src->still.allocator->buffers(src->config->at(1).stream());
+		
 		for (const auto &buffer : still_buffers) {
 			src->mapBuffer(buffer, true);
 		}
 	}
-
-
-	return ret;
+	
+	return 0;
 }
 
-static const struct video_source_ops libcamera_source_video_ops = {
-	.destroy 		= libcamera_source_destroy,
-	.set_format 	= libcamera_source_video_set_format,
-	.set_frame_rate = libcamera_source_video_set_frame_rate,
-	.alloc_buffers 	= libcamera_source_alloc_buffers,
-	.export_buffers = libcamera_source_video_export_buffers,
-	.import_buffers = libcamera_source_video_import_buffers,
-	.free_buffers 	= libcamera_source_free_buffers,
-	.stream_on 		= libcamera_source_stream_on,
-	.stream_off 	= libcamera_source_stream_off,
-	.queue_buffer 	= libcamera_source_video_queue_buffer,
-	.fill_buffer 	= NULL,
-};
+static int libcamera_source_still_capture_off(struct still_source *s)
+{
 
-static int still_source_capture_wrapper(struct still_source *ssrc) {
-	libcamera_source *src = container_of(ssrc, libcamera_source, still_src);
+	struct libcamera_source *src = to_libcamera_source(s, still_src);
+
+	if (!src->video.stream_on)
+		return -EBUSY;
+
+	src->still.capture_in_progress = false;
+	while (!src->still.completed_requests.empty())
+		src->still.completed_requests.pop();
+	
+	return 0;
+}
+
+static int libcamera_source_still_capture(struct still_source *s)
+{
+	struct libcamera_source *src = to_libcamera_source(s, still_src);
+
+	if (src->still.capture_in_progress)
+		return -EBUSY;
+
+	if (!src->video.stream_on)
+		return -EBUSY;
+
 	return src->captureStill();
 }
 
 static const struct still_source_ops libcamera_source_still_ops = {
-	.destroy = nullptr,
-	.set_format = nullptr,
-	.alloc_buffer = nullptr,
-	.free_buffer = nullptr,
-	.capture = still_source_capture_wrapper,
-	.get_buffer = nullptr,
+	.set_format 	= libcamera_source_still_set_format,
+	.alloc_buffer 	= libcamera_source_still_alloc_buffer,
+	.free_buffer 	= libcamera_source_still_free_buffer,
+	.capture 		= libcamera_source_still_capture,
 };
 
+#endif
+/* --------------------------------------------------------------------------------
+ * ----- Public API Functions ---- *
+ * -------------------------------------------------------------------------------
+ */
+/* Helper to generate a user-friendly camera name from its properties */
 std::string cameraName(Camera *camera)
 {
 	const ControlList &props = camera->properties();
@@ -739,7 +802,6 @@ std::string cameraName(Camera *camera)
 
 	return name;
 }
-
 
 struct video_source *libcamera_source_create(const char *devname)
 {
@@ -775,8 +837,9 @@ struct video_source *libcamera_source_create(const char *devname)
 	src->video_src.ops = &libcamera_source_video_ops;
 	src->video_src.type = VIDEO_SOURCE_DMABUF;
 
+#ifdef STILL_CAPTURE
 	src->still_src.ops = &libcamera_source_still_ops;
-
+#endif
 	src->cm = std::make_unique<CameraManager>();
 	src->cm->start();
 
@@ -818,10 +881,15 @@ struct video_source *libcamera_source_create(const char *devname)
 	}
 
 	std::cout << "Using camera " << cameraName(src->camera.get()) << std::endl;
-
+#ifdef STILL_CAPTURE
 	src->config =
 		src->camera->generateConfiguration( { StreamRole::VideoRecording, StreamRole::StillCapture });
-	if (!src->config) {
+#else
+	src->config =
+		src->camera->generateConfiguration( { StreamRole::VideoRecording });
+#endif	
+	
+	if (!src->config) {	
 		std::cerr << "failed to generate camera config" << std::endl;
 		goto err_release_camera;
 	}
@@ -860,17 +928,11 @@ err_free_src:
 	return NULL;
 }
 
-
 void libcamera_source_init(struct video_source *s, struct events *events)
 {
-	struct libcamera_source *src = to_libcamera_source(s);
+	struct libcamera_source *src = to_libcamera_source(s, video_src);
 
 	src->video_src.events = events;
-}
-
-extern "C" struct still_source *libcamera_get_still_source(struct video_source *s) {
-	struct libcamera_source *src = to_libcamera_source(s);
-	return &src->still_src;
 }
 
 extern "C" void libcamera_still_source_set_callback(struct still_source *ssrc, still_capture_ready_t cb, void *data) {
