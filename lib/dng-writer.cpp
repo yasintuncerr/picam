@@ -5,7 +5,7 @@
  * DNG writer
  */
 
-#include "dng_writer.h"
+#include "dng-writer.h"
 
 #include <algorithm>
 #include <endian.h>
