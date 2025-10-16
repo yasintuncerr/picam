@@ -107,8 +107,7 @@ cleanup:
     return NULL;
 }
 
-// ... (http_server_thread, http_capture_new, http_capture_destroy aynı kalır) ...
-// (Buraya sunucu kodunun geri kalanını yapıştır)
+
 static void *http_server_thread(void *arg) {
     struct http_server *server = (struct http_server *)arg;
     while (server->running) {
