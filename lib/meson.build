@@ -31,7 +31,7 @@ libtiff = dependency('libtiff-4', required : true)
 
 libuvcgadget = shared_library('uvcgadget',
                               libuvcgadget_sources,
-                              'dng_writer.cpp',
+                              'dng-writer.cpp',
                               dependencies : [libcamera, libjpeg, threads, libtiff],
                               version : uvc_gadget_version,
                               install : true,
