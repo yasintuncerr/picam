@@ -278,26 +278,23 @@ static void libcamera_source_still_process(libcamera_source *src)
     struct still_buffer buffer = {}; // Initialize to zero
     buffer.error = true; // Assume error until success
 
-    // Gerekli tüm libcamera nesnelerini al
     Stream *stream = src->config->at(1).stream();
     const StreamConfiguration &config = stream->configuration();
     const ControlList &metadata = request->metadata();
     FrameBuffer *frameBuffer = request->buffers().at(stream);
     
-    // Mapped buffer'dan ham veri pointer'ını al
     auto span = src->still.mapped_buffers_.find(frameBuffer);
     if (span == src->still.mapped_buffers_.end()) {
         std::cerr << "Could not find mapped buffer for DNG writing" << std::endl;
         delete request;
         src->still.capture_in_progress = false;
-        // Callback'i yine de çağırabiliriz ki client beklemede kalmasın
         if (src->still.capture_ready_cb)
             src->still.capture_ready_cb(src->still.capture_ready_data, &buffer);
         return;
     }
     void *data = span->second.data();
 
-    // RAM disk'e geçici dosya oluştur
+    // Create a temporary file on RAM disk
 
     char temp_path[256];
 
@@ -307,7 +304,7 @@ static void libcamera_source_still_process(libcamera_source *src)
 
     
 
-    // DNGWriter'ı dosyaya yaz
+    // Write DNG file using DNGWriter
 
     int ret = DNGWriter::write(temp_path, src->camera.get(), config, 
 
@@ -315,7 +312,7 @@ static void libcamera_source_still_process(libcamera_source *src)
 
     if (ret == 0) {
 
-        // Dosyayı belleğe oku
+        // Read the file into memory
 
         FILE *fp = fopen(temp_path, "rb");
 
