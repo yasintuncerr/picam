@@ -15,7 +15,7 @@ libuvcgadget_sources = files([
   'video-source.c',
   'still-source.c',
   'capture.c',
-  'dng_writer.cpp',
+  'dng-writer.cpp',
 ])
 
 if libcamera.found()
