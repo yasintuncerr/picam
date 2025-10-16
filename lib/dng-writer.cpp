@@ -14,7 +14,7 @@
 #include <vector>
 
 #include <tiffio.h>
-
+#include <cstring>
 #include <libcamera/control_ids.h>
 #include <libcamera/formats.h>
 #include <libcamera/property_ids.h>
@@ -127,6 +127,44 @@ struct Matrix3d {
 
 	float m[9];
 };
+
+
+struct TiffBufferWrapper {
+    std::vector<uint8_t> &buffer;
+    tmsize_t offset = 0;
+};
+
+static tmsize_t tiffWriteProc(thandle_t handle, void *data, tmsize_t size) {
+    auto *wrapper = static_cast<TiffBufferWrapper *>(handle);
+    if (wrapper->offset + size > wrapper->buffer.size()) {
+        wrapper->buffer.resize(wrapper->offset + size);
+    }
+    memcpy(wrapper->buffer.data() + wrapper->offset, data, size);
+    wrapper->offset += size;
+    return size;
+}
+
+static toff_t tiffSeekProc(thandle_t handle, toff_t offset, int whence) {
+    auto *wrapper = static_cast<TiffBufferWrapper *>(handle);
+    tmsize_t new_offset = 0;
+
+    if (whence == SEEK_SET) new_offset = offset;
+    else if (whence == SEEK_CUR) new_offset = wrapper->offset + offset;
+    else if (whence == SEEK_END) new_offset = wrapper->buffer.size() + offset;
+
+    if (new_offset < 0 || (size_t)new_offset > wrapper->buffer.size()) return -1;
+
+    wrapper->offset = new_offset;
+    return wrapper->offset;
+}
+
+static tmsize_t tiffReadProc(thandle_t, void*, tmsize_t) { return -1; }
+static int tiffCloseProc(thandle_t) { return 0; }
+static toff_t tiffSizeProc(thandle_t handle) {
+    auto *wrapper = static_cast<TiffBufferWrapper *>(handle);
+    return wrapper->buffer.size();
+}
+
 
 namespace {
 
@@ -519,14 +557,14 @@ const std::map<PixelFormat, FormatInfo> formatInfo = {
 
 } /* namespace */
 
-int DNGWriter::write(const char *filename, const Camera *camera,
-		     const StreamConfiguration &config,
-		     const ControlList &metadata,
-		     [[maybe_unused]] const FrameBuffer *buffer,
-		     const void *data)
+
+int DNGWriter::writeInternal( TIFF *tif, const Camera *camera,
+			const StreamConfiguration &config,
+			const ControlList &metadata,
+
+			const void *data)
 {
 	const ControlList &cameraProperties = camera->properties();
-
 	const auto it = formatInfo.find(config.pixelFormat);
 	if (it == formatInfo.cend()) {
 		std::cerr << "Unsupported pixel format" << std::endl;
@@ -534,12 +572,8 @@ int DNGWriter::write(const char *filename, const Camera *camera,
 	}
 	const FormatInfo *info = &it->second;
 
-	TIFF *tif = TIFFOpen(filename, "w");
-	if (!tif) {
-		std::cerr << "Failed to open tiff file" << std::endl;
-		return -EINVAL;
-	}
-
+	
+	
 	/*
 	 * Scanline buffer, has to be large enough to store both a RAW scanline
 	 * or a thumbnail scanline. The latter will always be much smaller than
@@ -803,7 +837,89 @@ int DNGWriter::write(const char *filename, const Camera *camera,
 	TIFFSetField(tif, TIFFTAG_EXIFIFD, exifIFDOffset);
 	TIFFWriteDirectory(tif);
 
+	return 0;
+}
+
+
+
+
+int DNGWriter::write(const char *filename, const Camera *camera,
+		     const StreamConfiguration &config,
+		     const ControlList &metadata,
+		     [[maybe_unused]] const FrameBuffer *buffer,
+		     const void *data)
+{
+	TIFF *tif = TIFFOpen(filename, "w");
+	if (!tif) {
+		std::cerr << "Failed to open tiff file" << std::endl;
+		return -EINVAL;
+	}
+
+	int ret = writeInternal(tif, camera, config, metadata, data);
+	if (ret < 0) {
+		std::cerr << "Failed to write DNG" << std::endl;
+		TIFFClose(tif);
+		return ret;
+	}
 	TIFFClose(tif);
 
 	return 0;
+}
+
+
+bool DNGWriter::writeToBuffer(const libcamera::Camera *camera,
+                              const libcamera::StreamConfiguration &config,
+                              const libcamera::ControlList &metadata,
+                              const libcamera::FrameBuffer *buffer,
+                              const void *data)
+{
+    std::vector<uint8_t> memory_buffer;
+    TiffBufferWrapper wrapper{memory_buffer};
+
+    TIFF *tif = TIFFClientOpen("InMemory", "w", &wrapper,
+                               tiffReadProc, tiffWriteProc, tiffSeekProc,
+                               tiffCloseProc, tiffSizeProc, nullptr, nullptr);
+
+    if (!tif) {
+        std::cerr << "Failed to open in-memory tiff client" << std::endl;
+        return false;
+    }
+
+    int ret = writeInternal(tif, camera, config, metadata, data);
+
+    TIFFClose(tif);
+
+    if (ret == 0 && !memory_buffer.empty()) {
+        
+        
+        DngBufferPtr dngBuffer(new still_buffer{}, [](still_buffer* b) {
+            if (b) {
+                if (b->mem) {
+                    free(b->mem);
+                }
+                delete b;
+            }
+        });
+
+        dngBuffer->mem = malloc(memory_buffer.size());
+        if (!dngBuffer->mem) {
+            std::cerr << "Failed to allocate memory for DNG buffer" << std::endl;
+            return false;
+        }
+
+        memcpy(dngBuffer->mem, memory_buffer.data(), memory_buffer.size());
+        dngBuffer->bytesused = memory_buffer.size();
+        dngBuffer->error = false;
+        
+        if (buffer) {
+            uint64_t ts = buffer->metadata().timestamp;
+            dngBuffer->timestamp.tv_sec = ts / 1000000;
+            dngBuffer->timestamp.tv_usec = ts % 1000000;
+        }
+
+        if (dngReadyCallback_) {
+            dngReadyCallback_(dngBuffer);
+        }
+    }
+	return ret == 0;
 }
