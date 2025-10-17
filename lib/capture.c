@@ -141,12 +141,12 @@ static void *http_server_thread(void *arg) {
     return NULL;
 }
 
-struct http_server *http_capture_new(int port, struct still_source *still_src) {
+struct http_server *http_capture_new(int port, struct video_source *video_src) {
     struct http_server *server = (struct http_server*)calloc(1, sizeof(*server));
     if (!server) return NULL;
     
 #ifdef HAVE_LIBCAMERA
-    server->still_src = still_src;
+    server->still_src = libcamera_get_still_source(video_src);
 #else
     server->still_src = NULL;
     (void)video_src; // Suppress unused parameter warning
