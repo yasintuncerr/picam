@@ -409,6 +409,14 @@ static int libcamera_source_video_set_format(struct video_source *s,
 	/* TODO: Can we use libcamera helpers to get image size / stride? */
 	fmt->sizeimage = fmt->width * fmt->height * 2;
 
+
+#ifdef STILL_CAPTURE
+	v4l2_pix_format still_fmt;
+	still_fmt.width = 4056;
+	still_fmt.height = 3040;
+	still_fmt.pixelformat = V4L2_PIX_FMT_SRGGB12;
+	libcamera_source_still_set_format(&src->still_src, &still_fmt);
+#endif
 	return 0;
 }
 
