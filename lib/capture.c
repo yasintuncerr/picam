@@ -28,7 +28,6 @@
 
 #ifdef HAVE_LIBCAMERA
 // libcamera C++ interface
-extern struct still_source *libcamera_get_still_source(struct video_source *s);
 extern void libcamera_still_source_set_callback(struct still_source *ssrc,
                                                 void (*cb)(void *, struct still_buffer *),
                                                 void *data);
@@ -141,12 +140,12 @@ static void *http_server_thread(void *arg) {
     return NULL;
 }
 
-struct http_server *http_capture_new(int port, struct video_source *video_src) {
+struct http_server *http_capture_new(int port, struct still_source *still_src) {
     struct http_server *server = (struct http_server*)calloc(1, sizeof(*server));
     if (!server) return NULL;
     
 #ifdef HAVE_LIBCAMERA
-    server->still_src = video_src ? libcamera_get_still_source(video_src) : NULL;
+    server->still_src = still_src;
 #else
     server->still_src = NULL;
     (void)video_src; // Suppress unused parameter warning
