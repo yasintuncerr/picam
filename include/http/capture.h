@@ -46,7 +46,7 @@ struct http_server {
  * @param vid_src The video source from which to get the still capture interface.
  * @return A pointer to the server instance, or NULL on failure.
  */
-struct http_server *http_capture_new(int port, struct still_source *still_src);
+struct http_server *http_capture_new(int port, struct video_source *video_src);
 
 /**
  * @brief Stops and destroys the HTTP capture server.
