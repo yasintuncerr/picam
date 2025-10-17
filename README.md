@@ -1,4 +1,4 @@
-# UVC Gadget with HTTP Still Capture
+# PICAM with UVC Gadget with HTTP Still Capture
 
 This project is an enhanced fork of the original **uvc-gadget** utility from the [libcamera project](https://gitlab.freedesktop.org/camera/uvc-gadget.git). The original application provides a robust way to turn a Linux-based device (like a Raspberry Pi) into a standard USB Video Class (UVC) webcam.
 
@@ -25,7 +25,6 @@ This fork extends the base functionality by adding a critical new feature: the a
   - [Capturing Still Images](#capturing-still-images)
 - [Architecture](#architecture)
 - [Acknowledgments](#acknowledgments)
-- [License](#license)
 
 ---
 
