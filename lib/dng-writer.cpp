@@ -168,7 +168,23 @@ static toff_t tiffSeekProc(thandle_t handle, toff_t offset, int whence) {
     return wrapper->offset;
 }
 
-static tmsize_t tiffReadProc(thandle_t, void*, tmsize_t) { return -1; }
+static tmsize_t tiffReadProc(thandle_t handle, void *data, tmsize_t size) {
+    auto *wrapper = static_cast<TiffBufferWrapper *>(handle);
+    
+    // Okunacak veri, buffer'ın boyutunu aşıyor mu kontrol et.
+    tmsize_t available_data = wrapper->buffer.size() - wrapper->offset;
+    tmsize_t read_size = size;
+    if (read_size > available_data) {
+        read_size = available_data;
+    }
+
+    if (read_size > 0) {
+        memcpy(data, wrapper->buffer.data() + wrapper->offset, read_size);
+        wrapper->offset += read_size;
+    }
+    
+    return read_size;
+}
 static int tiffCloseProc(thandle_t) { return 0; }
 static toff_t tiffSizeProc(thandle_t handle) {
     auto *wrapper = static_cast<TiffBufferWrapper *>(handle);
