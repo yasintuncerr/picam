@@ -225,6 +225,7 @@ static int libcamera_source_still_set_format(struct still_source *s, struct v4l2
 static int libcamera_source_still_alloc_buffer(struct still_source *s);
 static int libcamera_source_still_free_buffer(struct still_source *s);
 static int libcamera_source_still_capture(struct still_source *s);
+static int libcamera_source_still_capture_off(struct still_source *s);
 #endif
 
 
@@ -816,9 +817,6 @@ struct video_source *libcamera_source_create(const char *devname)
 
 	src = new libcamera_source;
 
-
-	src->video.latest_exposure_time = 0;
-    src->video.latest_analogue_gain = 0.0f;
 
 	/*
 	 * Event handling in libuvcgadget currently depends on select(), but
