@@ -760,8 +760,8 @@ static int libcamera_source_still_capture(struct still_source *s)
 {
 	struct libcamera_source *src = to_libcamera_source(s, still_src);
 
-	if (src->still.capture_in_progress)
-		return -EBUSY;
+	//if (src->still.capture_in_progress)
+	//	return -EBUSY;
 
 	if (!src->video.stream_on)
 		return -EBUSY;
