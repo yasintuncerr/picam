@@ -212,7 +212,7 @@ static void process_camera_events(void *d);
 
 /* Video Source Static Functions  Declarations */
 static void libcamera_source_video_destroy(struct video_source *s);
-static void libcamera_source_video_set_format(struct video_source *s, struct v4l2_pix_format *fmt);
+static int libcamera_source_video_set_format(struct video_source *s, struct v4l2_pix_format *fmt);
 static int libcamera_source_video_set_frame_rate(struct video_source *s, unsigned int fps);
 static int libcamera_source_video_alloc_buffers(struct video_source *s, unsigned int nbufs);
 static int libcamera_source_video_export_buffers(struct video_source *s, struct video_buffer_set **bufs);
@@ -768,6 +768,7 @@ static const struct still_source_ops libcamera_source_still_ops = {
 	.alloc_buffer 	= libcamera_source_still_alloc_buffer,
 	.free_buffer 	= libcamera_source_still_free_buffer,
 	.capture 		= libcamera_source_still_capture,
+	.capture_off	= libcamera_source_still_capture_off,
 };
 
 #endif
