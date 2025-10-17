@@ -9,11 +9,6 @@
 #include <stdio.h> 
 #include <stdlib.h>
 
-void still_source_destroy(struct still_source *src)
-{
-    if (src)
-        src->ops->destroy(src);
-}
 
 int still_source_set_format(struct still_source *src, struct v4l2_pix_format *fmt)
 {
@@ -33,11 +28,6 @@ int still_source_free_buffer(struct still_source *src)
 int still_source_capture(struct still_source *src)
 {
     return src->ops->capture(src);
-}
-
-struct still_buffer *still_source_get_buffer(struct still_source *src)
-{
-    return src->ops->get_buffer(src);
 }
 
 
