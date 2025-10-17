@@ -171,7 +171,6 @@ static toff_t tiffSeekProc(thandle_t handle, toff_t offset, int whence) {
 static tmsize_t tiffReadProc(thandle_t handle, void *data, tmsize_t size) {
     auto *wrapper = static_cast<TiffBufferWrapper *>(handle);
     
-    // Okunacak veri, buffer'ın boyutunu aşıyor mu kontrol et.
     tmsize_t available_data = wrapper->buffer.size() - wrapper->offset;
     tmsize_t read_size = size;
     if (read_size > available_data) {
