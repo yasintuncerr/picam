@@ -32,4 +32,5 @@ void libcamera_still_source_set_callback(struct still_source *ssrc,
 } // extern "C"
 #endif
 
+#endif /* __HAVE_LIBCAMERA__ */
 #endif /* __LIBCAMERA_SOURCE_H__ */
