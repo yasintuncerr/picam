@@ -134,34 +134,15 @@ sudo make install
 # Update library cache
 sudo ldconfig
 ```
+fter building and installing, the `picam` executable will be available at `/usr/bin/picam`, and the `picam-gadget.sh` script will be at `/usr/bin/picam-gadget.sh`.
 
-After installation, the `picam` executable will be available at `/usr/bin/picam`, and the `picam-gadget.sh` script will be at `/usr/bin/picam-gadget.sh`.
+---
 
-### Step 4: Network Configuration
+## Step 4: Network Configuration
 
-To enable HTTP capture functionality over USB, configure the Pi to act as a USB network device:
+### Configure dnsmasq for USB Network
 
-#### Configure USB Network Interface
-
-Edit the DHCP configuration:
-
-```bash
-sudo nano /etc/dhcpcd.conf
-```
-
-Add the following lines at the end of the file:
-
-```
-# USB OTG Network Interface
-interface usb0
-static ip_address=192.168.7.2/24
-```
-
-Save and exit (Ctrl+X, Y, Enter).
-
-#### Configure DHCP Server
-
-Create a DHCP configuration for the USB interface:
+Create the DHCP configuration for the USB interface:
 
 ```bash
 sudo nano /etc/dnsmasq.d/usb-dhcp.conf
@@ -179,23 +160,11 @@ dhcp-option=6,192.168.7.2
 
 Save and exit.
 
-#### Restart Network Services
+---
 
-```bash
-sudo systemctl restart dhcpcd
-sudo systemctl restart dnsmasq
-sudo systemctl enable dnsmasq
-```
+## Step 5: Create Systemd Services
 
-Verify dnsmasq is running:
-
-```bash
-systemctl status dnsmasq
-```
-
-### Step 5: Create Systemd Service
-
-To have the UVC gadget start automatically on boot, create a systemd service:
+### Create picam.service
 
 ```bash
 sudo nano /etc/systemd/system/picam.service
@@ -207,19 +176,29 @@ Add the following service configuration:
 [Unit]
 Description=PiCam UVC Gadget with HTTP Still Capture
 After=network.target local-fs.target
+Before=dnsmasq.service
 
 [Service]
 Type=simple
 User=root
 WorkingDirectory=/root
 
-# First setup the UVC gadget
+# Setup the UVC gadget
 ExecStartPre=/usr/bin/picam-gadget.sh start
+
+# Wait a moment for usb0 to appear
+ExecStartPre=/bin/sleep 2
+
+# Bring up usb0 and configure it
+ExecStartPre=/sbin/ip link set usb0 up
+ExecStartPre=/sbin/ip addr add 192.168.7.2/24 dev usb0
 
 # Start the camera application
 ExecStart=/usr/bin/picam -c 0 -p 8080 uvc.0
 
 # Cleanup on stop
+ExecStopPost=/sbin/ip addr flush dev usb0
+ExecStopPost=/sbin/ip link set usb0 down
 ExecStopPost=/usr/bin/picam-gadget.sh stop
 
 # Restart on failure
@@ -236,35 +215,157 @@ WantedBy=multi-user.target
 
 Save and exit.
 
-#### Enable and Start the Service
+### Configure dnsmasq Service Dependencies
+
+Create the override directory if it doesn't exist:
 
 ```bash
-# Reload systemd to recognize the new service
-sudo systemctl daemon-reload
-
-# Enable the service to start on boot
-sudo systemctl enable picam.service
-
-# Start the service immediately
-sudo systemctl start picam.service
-
-# Check the service status
-sudo systemctl status picam.service
+sudo mkdir -p /etc/systemd/system/dnsmasq.service.d
 ```
 
-#### View Service Logs
+Create the override configuration:
+
+```bash
+sudo nano /etc/systemd/system/dnsmasq.service.d/override.conf
+```
+
+Add the following:
+
+```ini
+[Unit]
+After=picam.service network-online.target
+Wants=picam.service network-online.target
+BindsTo=sys-subsystem-net-devices-usb0.device
+After=sys-subsystem-net-devices-usb0.device
+```
+
+Save and exit.
+
+### Enable and Start Services
+
+```bash
+# Reload systemd to recognize changes
+sudo systemctl daemon-reload
+
+# Enable services to start on boot
+sudo systemctl enable picam.service
+sudo systemctl enable dnsmasq.service
+
+# Restart network services
+sudo systemctl restart dhcpcd
+
+# Start picam service
+sudo systemctl start picam.service
+
+# Wait for usb0 to be ready
+sleep 3
+
+# Start dnsmasq service
+sudo systemctl start dnsmasq.service
+
+# Check service status
+sudo systemctl status picam.service
+sudo systemctl status dnsmasq.service
+```
+
+### Verify Installation
+
+```bash
+# Check if usb0 is UP with correct IP
+ifconfig usb0
+# Should show: inet 192.168.7.2  netmask 255.255.255.0
+
+# Check if picam is running
+ps aux | grep picam
+
+# Check if HTTP server is listening
+sudo netstat -tlnp | grep 8080
+
+# View service logs
+sudo journalctl -u picam.service -n 30
+sudo journalctl -u dnsmasq.service -n 30
+```
+
+---
+
+## Step 6: View Service Logs
 
 To monitor the service output:
 
 ```bash
-# View live logs
+# View live logs for picam
 sudo journalctl -u picam.service -f
 
-# View recent logs
+# View recent logs for picam
 sudo journalctl -u picam.service -n 50
+
+# View dnsmasq logs
+sudo journalctl -u dnsmasq.service -n 50
+
+# View all related logs
+sudo journalctl -u picam.service -u dnsmasq.service -n 100
 ```
 
 ---
+
+## Reboot and Test
+
+After everything is configured, reboot to test the automatic startup:
+
+```bash
+sudo reboot
+```
+
+After reboot, connect the Pi to your computer via USB and verify:
+
+```bash
+# On the Pi (via SSH over WiFi):
+systemctl status picam.service
+systemctl status dnsmasq.service
+ifconfig usb0
+
+# On your computer:
+# Configure USB network interface to 192.168.7.1/24
+# Then test:
+ping 192.168.7.2
+curl http://192.168.7.2:8080/capture -o test.dng
+```
+
+---
+
+## Troubleshooting
+
+### usb0 interface not UP
+```bash
+sudo systemctl restart picam.service
+sudo journalctl -u picam.service -n 50
+```
+
+### dnsmasq fails with "unknown interface usb0"
+```bash
+# Check if picam.service started first
+sudo systemctl status picam.service
+# Restart dnsmasq after picam is ready
+sudo systemctl restart dnsmasq.service
+```
+
+### Can't access HTTP server
+```bash
+# Check if picam is listening
+sudo netstat -tlnp | grep 8080
+# Check firewall (if enabled)
+sudo iptables -L
+```
+
+### Service fails to start on boot
+```bash
+# Check service dependencies
+systemctl list-dependencies picam.service
+systemctl list-dependencies dnsmasq.service
+# View detailed logs
+sudo journalctl -xe
+```
+
 
 ## Usage
 
