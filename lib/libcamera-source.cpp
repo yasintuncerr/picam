@@ -940,3 +940,9 @@ extern "C" void libcamera_still_source_set_callback(struct still_source *ssrc, s
 	src->still.capture_ready_cb = cb;
 	src->still.capture_ready_data = data;
 };
+
+struct still_source *libcamera_get_still_source(struct video_source *s)
+{
+	struct libcamera_source *src = to_libcamera_source(s, video_src);
+	return &src->still_src;
+}
