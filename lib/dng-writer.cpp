@@ -558,7 +558,7 @@ const std::map<PixelFormat, FormatInfo> formatInfo = {
 } /* namespace */
 
 
-int DNGWriter::writeInternal( TIFF *tif, const Camera *camera,
+static int DNGWriter::writeInternal( TIFF *tif, const Camera *camera,
 			const StreamConfiguration &config,
 			const ControlList &metadata,
 
@@ -843,7 +843,7 @@ int DNGWriter::writeInternal( TIFF *tif, const Camera *camera,
 
 
 
-int DNGWriter::write(const char *filename, const Camera *camera,
+static int DNGWriter::write(const char *filename, const Camera *camera,
 		     const StreamConfiguration &config,
 		     const ControlList &metadata,
 		     [[maybe_unused]] const FrameBuffer *buffer,
@@ -885,7 +885,7 @@ bool DNGWriter::writeToBuffer(const libcamera::Camera *camera,
         return false;
     }
 
-    int ret = writeInternal(tif, camera, config, metadata, data);
+    int ret = ::writeInternal(tif, camera, config, metadata, data);
 
     TIFFClose(tif);
 
