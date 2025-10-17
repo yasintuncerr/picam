@@ -12,8 +12,9 @@
 #ifdef HAVE_TIFF
 
 #include <functional>
-#include <memory> // std::shared_ptr için eklendi
+#include <memory> 
 #include <vector>
+#include <tiffio.h>
 
 #include <libcamera/camera.h>
 #include <libcamera/controls.h>
