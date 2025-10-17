@@ -30,4 +30,9 @@ int still_source_capture(struct still_source *src)
     return src->ops->capture(src);
 }
 
+int still_source_capture_off(struct still_source *src)
+{
+    return src->ops->capture_off(src);
+}
+
 
