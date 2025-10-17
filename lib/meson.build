@@ -33,7 +33,7 @@ libuvcgadget = shared_library('uvcgadget',
                               libuvcgadget_sources,
                               'dng-writer.cpp',
                               dependencies : [libcamera, libjpeg, threads, libtiff],
-                              cpp_args : ['-DHAVE_TIFF','-DSTILL_CAPTURE],
+                              cpp_args : ['-DHAVE_TIFF','-DSTILL_CAPTURE'],
                               version : uvc_gadget_version,
                               install : true,
                               include_directories : [includes, config_includes])
