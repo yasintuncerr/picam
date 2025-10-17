@@ -855,7 +855,7 @@ static int DNGWriter::write(const char *filename, const Camera *camera,
 		return -EINVAL;
 	}
 
-	int ret = writeInternal(tif, camera, config, metadata, data);
+	int ret = DNGWriter::writeInternal(tif, camera, config, metadata, data);
 	if (ret < 0) {
 		std::cerr << "Failed to write DNG" << std::endl;
 		TIFFClose(tif);
@@ -885,7 +885,7 @@ bool DNGWriter::writeToBuffer(const libcamera::Camera *camera,
         return false;
     }
 
-    int ret = ::writeInternal(tif, camera, config, metadata, data);
+    int ret = DNGWriter::writeInternal(tif, camera, config, metadata, data);
 
     TIFFClose(tif);
 
