@@ -1,4 +1,3 @@
-cat new-rpi-gadget.sh 
 #!/bin/bash
 
 # Variables we need to make things easier later on.
