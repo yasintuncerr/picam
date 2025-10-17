@@ -31,6 +31,7 @@ extern "C" {
 #include "tools.h"
 #include "video-buffers.h"
 #include "still-source.h"
+#include "video-source.h"
 }
 #include "dng-writer.h"
 
