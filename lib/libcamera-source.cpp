@@ -936,7 +936,7 @@ void libcamera_source_init(struct video_source *s, struct events *events)
 }
 
 extern "C" void libcamera_still_source_set_callback(struct still_source *ssrc, still_capture_ready_t cb, void *data) {
-	auto *src = container_of(ssrc, libcamera_source, still_src);
+	auto *src = to_libcamera_source(ssrc, still_src);
 	src->still.capture_ready_cb = cb;
 	src->still.capture_ready_data = data;
 };
