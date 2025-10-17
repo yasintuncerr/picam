@@ -136,7 +136,7 @@ struct TiffBufferWrapper {
 
 static tmsize_t tiffWriteProc(thandle_t handle, void *data, tmsize_t size) {
     auto *wrapper = static_cast<TiffBufferWrapper *>(handle);
-    if (wrapper->offset + size > wrapper->buffer.size()) {
+    if (static_cast<size_t>(wrapper->offset + size) > wrapper->buffer.size()) {
         wrapper->buffer.resize(wrapper->offset + size);
     }
     memcpy(wrapper->buffer.data() + wrapper->offset, data, size);
