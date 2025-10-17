@@ -148,11 +148,21 @@ static toff_t tiffSeekProc(thandle_t handle, toff_t offset, int whence) {
     auto *wrapper = static_cast<TiffBufferWrapper *>(handle);
     tmsize_t new_offset = 0;
 
-    if (whence == SEEK_SET) new_offset = offset;
-    else if (whence == SEEK_CUR) new_offset = wrapper->offset + offset;
-    else if (whence == SEEK_END) new_offset = wrapper->buffer.size() + offset;
+    if (whence == SEEK_SET) {
+        new_offset = offset;
+    } else if (whence == SEEK_CUR) {
+        new_offset = wrapper->offset + offset;
+    } else if (whence == SEEK_END) {
+        new_offset = wrapper->buffer.size() + offset;
+    }
 
-    if (new_offset < 0 || (size_t)new_offset > wrapper->buffer.size()) return -1;
+    if (new_offset < 0) {
+        return -1;
+    }
+
+     if ((size_t)new_offset > wrapper->buffer.size()) {
+        wrapper->buffer.resize(new_offset);
+    }
 
     wrapper->offset = new_offset;
     return wrapper->offset;
