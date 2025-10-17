@@ -10,8 +10,6 @@
 #ifndef __LIBCAMERA_SOURCE_C_H__
 #define __LIBCAMERA_SOURCE_C_H__
 
-#include "config.h"
-
 #ifdef HAVE_LIBCAMERA
 
 #ifdef __cplusplus
