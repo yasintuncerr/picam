@@ -46,7 +46,6 @@ public:
     DNGWriter() = default;
     ~DNGWriter() = default;
     
-    // Kopyalama ve taşıma operasyonlarını engellemek iyi bir pratik olabilir
     DNGWriter(const DNGWriter&) = delete;
     DNGWriter& operator=(const DNGWriter&) = delete;
     
@@ -62,17 +61,15 @@ public:
                      const libcamera::StreamConfiguration &config,
                      const libcamera::ControlList &metadata,
                      const libcamera::FrameBuffer *buffer, const void *data);
-  	static int writeInternal(TIFF *tif, const libcamera::Camera *camera,
+  	
+private:
+    DngReadyCallback dngReadyCallback_;
+    
+	int writeInternal(TIFF *tif, const libcamera::Camera *camera,
                       const libcamera::StreamConfiguration &config,
                       const libcamera::ControlList &metadata,
                       const void *data);
 
-private:
-    DngReadyCallback dngReadyCallback_;
-    
-    // Bu artık static değil, çünkü DNGWriter'ın bir üyesi olan callback'e erişmesi gerekiyor.
-    // Eğer callback static bir değişkende tutulsaydı static kalabilirdi.
-    // Alternatif olarak, callback'i parametre olarak da alabilirdi.
   };
 
 #endif /* HAVE_TIFF */
