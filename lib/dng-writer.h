@@ -62,6 +62,10 @@ public:
                      const libcamera::StreamConfiguration &config,
                      const libcamera::ControlList &metadata,
                      const libcamera::FrameBuffer *buffer, const void *data);
+  	static int writeInternal(TIFF *tif, const libcamera::Camera *camera,
+                      const libcamera::StreamConfiguration &config,
+                      const libcamera::ControlList &metadata,
+                      const void *data);
 
 private:
     DngReadyCallback dngReadyCallback_;
@@ -69,10 +73,6 @@ private:
     // Bu artık static değil, çünkü DNGWriter'ın bir üyesi olan callback'e erişmesi gerekiyor.
     // Eğer callback static bir değişkende tutulsaydı static kalabilirdi.
     // Alternatif olarak, callback'i parametre olarak da alabilirdi.
-    int writeInternal(TIFF *tif, const libcamera::Camera *camera,
-                      const libcamera::StreamConfiguration &config,
-                      const libcamera::ControlList &metadata,
-                      const void *data);
-};
+  };
 
 #endif /* HAVE_TIFF */
