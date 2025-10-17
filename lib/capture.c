@@ -28,6 +28,7 @@
 
 #ifdef HAVE_LIBCAMERA
 // libcamera C++ interface
+extern struct still_source *libcamera_get_still_source(struct video_source *s);
 extern void libcamera_still_source_set_callback(struct still_source *ssrc,
                                                 void (*cb)(void *, struct still_buffer *),
                                                 void *data);
