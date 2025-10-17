@@ -7,8 +7,8 @@
  *
  * These declarations allow C code to call libcamera-source functions
  */
-#ifndef __LIBCAMERA_SOURCE_C_H__
-#define __LIBCAMERA_SOURCE_C_H__
+#ifndef __LIBCAMERA_SOURCE_H__
+#define __LIBCAMERA_SOURCE_H__
 
 #ifdef HAVE_LIBCAMERA
 
@@ -18,7 +18,7 @@ extern "C" {
 
 struct still_source;
 struct still_buffer;
-//struct video_source;
+struct video_source;
 
 /* Get the still_source interface from a libcamera video_source */
 struct still_source *libcamera_get_still_source(struct video_source *s);
@@ -32,6 +32,4 @@ void libcamera_still_source_set_callback(struct still_source *ssrc,
 } // extern "C"
 #endif
 
-#endif /* HAVE_LIBCAMERA */
-
-#endif /* __LIBCAMERA_SOURCE_C_H__ */
+#endif /* __LIBCAMERA_SOURCE_H__ */
