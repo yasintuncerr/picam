@@ -596,6 +596,10 @@ static int libcamera_source_video_alloc_buffers(struct video_source *s, unsigned
 	int ret;
 
 	streamConfig.bufferCount = nbufs;
+	if (src->config->size() > 1) {
+		StreamConfiguration &stillStreamConfig = src->config->at(1);
+		stillStreamConfig.bufferCount = 1;
+	}
 	ret = src->camera->configure(src->config.get());
 	if (ret) {
 		std::cerr << "failed to configure the camera" << std::endl;
