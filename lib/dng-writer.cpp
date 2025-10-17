@@ -561,7 +561,7 @@ const std::map<PixelFormat, FormatInfo> formatInfo = {
 static int DNGWriter::writeInternal( TIFF *tif, const Camera *camera,
 			const StreamConfiguration &config,
 			const ControlList &metadata,
-
+			const FrameBuffer *buffer,
 			const void *data)
 {
 	const ControlList &cameraProperties = camera->properties();
