@@ -74,3 +74,14 @@ subdir('include')
 
 subdir('lib')
 subdir('src')
+
+
+fs = import('fs')
+
+sh_scripts = fs.glob('scripts/*.sh')
+
+install_data(
+  sh_scripts,
+  install_dir: get_option('bindir'),
+  install_mode: 'rwxr-xr-x'
+)
