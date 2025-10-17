@@ -35,6 +35,7 @@ struct still_source_ops {
     int(*alloc_buffer)(struct still_source *src);
     int(*free_buffer)(struct still_source *src);
     int(*capture)(struct still_source *src);
+    int(*capture_off)(struct still_source *src);
 };
 
 struct still_source {
