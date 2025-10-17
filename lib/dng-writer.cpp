@@ -136,7 +136,7 @@ struct TiffBufferWrapper {
 
 static tmsize_t tiffWriteProc(thandle_t handle, void *data, tmsize_t size) {
     auto *wrapper = static_cast<TiffBufferWrapper *>(handle);
-    if (static_cast<size_t>(wrapper->offset + size) > wrapper->buffer.size()) {
+    if (wrapper->offset + size > static_cast<tmsize_t>(wrapper->buffer.size())) {
         wrapper->buffer.resize(wrapper->offset + size);
     }
     memcpy(wrapper->buffer.data() + wrapper->offset, data, size);
@@ -558,10 +558,10 @@ const std::map<PixelFormat, FormatInfo> formatInfo = {
 } /* namespace */
 
 
-static int DNGWriter::writeInternal( TIFF *tif, const Camera *camera,
+int DNGWriter::writeInternal( TIFF *tif, const Camera *camera,
 			const StreamConfiguration &config,
 			const ControlList &metadata,
-			const FrameBuffer *buffer,
+
 			const void *data)
 {
 	const ControlList &cameraProperties = camera->properties();
@@ -843,7 +843,7 @@ static int DNGWriter::writeInternal( TIFF *tif, const Camera *camera,
 
 
 
-static int DNGWriter::write(const char *filename, const Camera *camera,
+int DNGWriter::write(const char *filename, const Camera *camera,
 		     const StreamConfiguration &config,
 		     const ControlList &metadata,
 		     [[maybe_unused]] const FrameBuffer *buffer,
@@ -855,7 +855,9 @@ static int DNGWriter::write(const char *filename, const Camera *camera,
 		return -EINVAL;
 	}
 
-	int ret = DNGWriter::writeInternal(tif, camera, config, metadata, data);
+	// Create a temporary DNGWriter object to call the non-static writeInternal method
+	DNGWriter writer;
+	int ret = writer.writeInternal(tif, camera, config, metadata, data);
 	if (ret < 0) {
 		std::cerr << "Failed to write DNG" << std::endl;
 		TIFFClose(tif);
@@ -885,7 +887,7 @@ bool DNGWriter::writeToBuffer(const libcamera::Camera *camera,
         return false;
     }
 
-    int ret = DNGWriter::writeInternal(tif, camera, config, metadata, data);
+    int ret = writeInternal(tif, camera, config, metadata, data);
 
     TIFFClose(tif);
 
