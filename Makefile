@@ -7,7 +7,7 @@ endif
 
 ninja = ninja $(ninja_args)
 
-all: uvc-gadget
+all: picam
 
 BUILDDIR=build/
 
@@ -31,8 +31,8 @@ $(BUILDDIR)/build.ninja reconfigure configure:
 		$(RECONFIGURE) $(ASAN) \
 		-Dprefix=/usr
 
-uvc-gadget: ## Build the uvc-gadget library and application
-uvc-gadget: | $(BUILDDIR)/build.ninja
+picam: ## Build the picam library and application
+picam: | $(BUILDDIR)/build.ninja
 	$(ninja) -C $(BUILDDIR)
 
 .PHONY: test install
