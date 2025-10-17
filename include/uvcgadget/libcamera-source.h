@@ -18,7 +18,7 @@ extern "C" {
 
 struct still_source;
 struct still_buffer;
-struct video_source;
+//struct video_source;
 
 /* Get the still_source interface from a libcamera video_source */
 struct still_source *libcamera_get_still_source(struct video_source *s);
