@@ -44,12 +44,22 @@ static void still_capture_ready_cb(void *data, struct still_buffer *buffer_from_
     struct http_client_session *session = (struct http_client_session *)data;
 
     pthread_mutex_lock(&session->mtx);
-    if (buffer_from_camera && !buffer_from_camera->error && buffer_from_camera->mem) {
-        session->captured_data = *buffer_from_camera;
-    } else {
-        session->captured_data.mem = NULL;
-        session->captured_data.error = true;
+    session->captured_data.mem = NULL;
+    session->captured_data.error = true;
+
+    if (buffer_from_camera && !buffer_from_camera->error && buffer_from_camera->mem && buffer_from_camera->bytesused > 0) {
+        session->captured_data.mem = malloc(buffer_from_camera->bytesused);
+        if (session->captured_data.mem) {
+            memcpy(session->captured_data.mem, buffer_from_camera->mem, buffer_from_camera->bytesused);
+
+            session->captured_data.bytesused = buffer_from_camera->bytesused;
+            session->captured_data.timestamp = buffer_from_camera->timestamp;
+            session->captured_data.error = false;
+        } else {
+            fprintf(stderr, "İstemci DNG arabelleği için bellek ayrılamadı\n");
+        }
     }
+
     session->capture_complete = true;
     pthread_cond_signal(&session->cond);
     pthread_mutex_unlock(&session->mtx);
