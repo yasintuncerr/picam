@@ -21,14 +21,18 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "config.h"
 #include "capture.h"
 #include "still-source.h"
+#include "video-source.h"
 
+#ifdef HAVE_LIBCAMERA
 // libcamera C++ interface
 extern struct still_source *libcamera_get_still_source(struct video_source *s);
 extern void libcamera_still_source_set_callback(struct still_source *ssrc,
                                                 void (*cb)(void *, struct still_buffer *),
                                                 void *data);
+#endif
 
 // Forward declarations
 static void *client_thread_func(void *arg);
@@ -65,6 +69,7 @@ static void *client_thread_func(void *arg) {
             const char *response = "HTTP/1.1 503 Service Unavailable\r\n\r\n";
             write(session->fd, response, strlen(response));
         } else {
+#ifdef HAVE_LIBCAMERA
             libcamera_still_source_set_callback(session->server->still_src, still_capture_ready_cb, session);
             if (still_source_capture(session->server->still_src) < 0) {
                 const char *response = "HTTP/1.1 500 Internal Server Error\r\n\r\nCapture trigger failed";
@@ -92,6 +97,10 @@ static void *client_thread_func(void *arg) {
                 }
                 pthread_mutex_unlock(&session->mtx);
             }
+#else
+            const char *response = "HTTP/1.1 501 Not Implemented\r\n\r\nCapture requires libcamera support";
+            write(session->fd, response, strlen(response));
+#endif
         }
     } else {
         const char *response = "HTTP/1.1 404 Not Found\r\n\r\n";
@@ -131,10 +140,18 @@ static void *http_server_thread(void *arg) {
     }
     return NULL;
 }
+
 struct http_server *http_capture_new(int port, struct video_source *video_src) {
     struct http_server *server = (struct http_server*)calloc(1, sizeof(*server));
     if (!server) return NULL;
+    
+#ifdef HAVE_LIBCAMERA
     server->still_src = video_src ? libcamera_get_still_source(video_src) : NULL;
+#else
+    server->still_src = NULL;
+    (void)video_src; // Suppress unused parameter warning
+#endif
+    
     server->running = true;
     server->listen_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (server->listen_fd < 0) {
@@ -160,6 +177,7 @@ struct http_server *http_capture_new(int port, struct video_source *video_src) {
     }
     return server;
 }
+
 void http_capture_destroy(struct http_server *server) {
     if (!server) return;
     server->running = false;
