@@ -1,29 +1,28 @@
 /* SPDX-License-Identifier: LGPL-2.1-or-later */
 /*
- * libcamera source C interface declarations
+ * libcamera video source
  *
- * Copyright (C) 2022 Ideas on Board Oy
+ * Copyright (C) 2022 Ideas on Board Oy.
+ * Copyright (C) 2022 Kieran Bingham
  * Copyright (C) 2025 Yasin Tunçer
- *
- * These declarations allow C code to call libcamera-source functions
  */
 #ifndef __LIBCAMERA_SOURCE_H__
 #define __LIBCAMERA_SOURCE_H__
 
-#ifdef HAVE_LIBCAMERA
+#include "video-source.h"
+
+struct events;
+struct still_source;
+struct still_buffer;
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-struct still_source;
-struct still_buffer;
-struct video_source;
+struct video_source *libcamera_source_create(const char *devname);
+void libcamera_source_init(struct video_source *src, struct events *events);
 
-/* Get the still_source interface from a libcamera video_source */
 struct still_source *libcamera_get_still_source(struct video_source *s);
-
-/* Set a callback for when still capture is ready */
 void libcamera_still_source_set_callback(struct still_source *ssrc,
                                          void (*cb)(void *, struct still_buffer *),
                                          void *data);
@@ -32,5 +31,4 @@ void libcamera_still_source_set_callback(struct still_source *ssrc,
 } // extern "C"
 #endif
 
-#endif /* __HAVE_LIBCAMERA__ */
 #endif /* __LIBCAMERA_SOURCE_H__ */
