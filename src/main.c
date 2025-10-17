@@ -23,6 +23,7 @@
 #include "slideshow-source.h"
 #include "capture.h"
 
+
 static void usage(const char *argv0)
 {
 	fprintf(stderr, "Usage: %s [options] <uvc device>\n", argv0);
@@ -62,7 +63,6 @@ static void usage(const char *argv0)
 	fprintf(stderr, "    %s musb-hdrc.0.auto\n", argv0);
 }
 
-extern struct still_source *libcamera_get_still_source(struct video_source *s);
 /* Necessary for and only used by signal handler. */
 static struct events *sigint_events;
 
@@ -183,8 +183,7 @@ int main(int argc, char *argv[])
 #ifdef HAVE_LIBCAMERA
 		if (camera) {
 			printf("Starting HTTP capture server on port %d\n", http_port);
-			still_src = libcamera_get_still_source(src);
-			http_server = http_capture_new(http_port, still_src);
+			http_server = http_capture_new(http_port, src);
 			if (!http_server) {
 				fprintf(stderr, "Failed to create HTTP capture server\n");
 				ret = 1;
