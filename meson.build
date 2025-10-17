@@ -76,9 +76,12 @@ subdir('lib')
 subdir('src')
 
 
-fs = import('fs')
-
-sh_scripts = fs.glob('scripts/*.sh')
+sh_scripts = files(
+  'scripts/gen-version.sh',
+  'scripts/picam-gadget.sh',
+  'scripts/release.sh',
+  'scripts/uvc-gadget.sh'
+)
 
 install_data(
   sh_scripts,
