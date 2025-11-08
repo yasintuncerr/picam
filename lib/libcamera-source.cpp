@@ -90,7 +90,7 @@ struct libcamera_source {
 
 #ifdef STILL_CAPTURE
 	
-	int captureStill();
+	int captureStill(int64_t exposure_us, float gain);
 	void DNGOutputReady(DngBufferPtr buffer);
 	// DNG Output Ready Callback will be handled like output ready of MJPEG Encoder
 #endif
@@ -164,13 +164,29 @@ void libcamera_source::outputReady(void *mem, size_t bytesused, int64_t timestam
 }
 
 #ifdef STILL_CAPTURE
-int libcamera_source::captureStill()
+int libcamera_source::captureStill(int64_t exposure_us, float gain)
 {
 	std::unique_ptr<Request> request = camera->createRequest();
 	if (!request) {
 		return -ENOMEM;
 	}
-		
+	
+
+	ControlList &ctrls = request->controls();
+	if (exposure_us > 0) {
+        controls.set(controls::AeEnable, false);
+        controls.set(controls::ExposureTime, exposure_us);
+        controls.set(controls::AnalogueGain, (gain > 0.0f) ? gain : 1.0f);
+
+    } else if (gain > 0.0f) {
+        controls.set(controls::AeEnable, true); 
+        controls.set(controls::AnalogueGain, gain);
+    
+    } else {
+        controls.set(controls::AeEnable, true);
+    }
+	
+
 	FrameBuffer *buffer_to_use = still.mapped_buffers_.begin()->first;
 	Stream *stream = config->at(1).stream();
 	int ret = request->addBuffer(stream, buffer_to_use);
@@ -225,7 +241,7 @@ static int libcamera_source_video_import_buffers(struct video_source *s, struct 
 static int libcamera_source_still_set_format(struct still_source *s, struct v4l2_pix_format *fmt);
 static int libcamera_source_still_alloc_buffer(struct still_source *s);
 static int libcamera_source_still_free_buffer(struct still_source *s);
-static int libcamera_source_still_capture(struct still_source *s);
+static int libcamera_source_still_capture(struct still_source *s, int64_t exposure_us, float gain);
 static int libcamera_source_still_capture_off(struct still_source *s);
 #endif
 
@@ -764,7 +780,7 @@ static int libcamera_source_still_capture_off(struct still_source *s)
 	return 0;
 }
 
-static int libcamera_source_still_capture(struct still_source *s)
+static int libcamera_source_still_capture(struct still_source *s, int64_t exposure_us, float gain)
 {
 	struct libcamera_source *src = to_libcamera_source(s, still_src);
 
@@ -773,14 +789,14 @@ static int libcamera_source_still_capture(struct still_source *s)
 	if (!src->video.stream_on)
 		return -EBUSY;
 
-	return src->captureStill();
+	return src->captureStill(exposure_us, gain);
 }
 
 static const struct still_source_ops libcamera_source_still_ops = {
 	.set_format 	= libcamera_source_still_set_format,
 	.alloc_buffer 	= libcamera_source_still_alloc_buffer,
 	.free_buffer 	= libcamera_source_still_free_buffer,
-	.capture 		= libcamera_source_still_capture,
+	.capture 		= (int (*)(still_source*, int64_t, float)) libcamera_source_still_capture,
 	.capture_off	= libcamera_source_still_capture_off,
 };
 
