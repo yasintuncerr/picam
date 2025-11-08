@@ -34,7 +34,7 @@ struct still_source_ops {
     int(*set_format)(struct still_source *src, struct v4l2_pix_format *fmt);
     int(*alloc_buffer)(struct still_source *src);
     int(*free_buffer)(struct still_source *src);
-    int(*capture)(struct still_source *src);
+    int(*capture)(struct still_source *src, int64_t exposure_us, float gain);
     int(*capture_off)(struct still_source *src);
 };
 
@@ -49,6 +49,6 @@ void still_source_destroy(struct still_source *src);
 int still_source_set_format(struct still_source *src, struct v4l2_pix_format *fmt);
 int still_source_alloc_buffer(struct still_source *src);
 int still_source_free_buffer(struct still_source *src);
-int still_source_capture(struct still_source *src);
+int still_source_capture(struct still_source *src, int64_t exposure_us, float gain);
 
 #endif /* __STILL_SOURCE_H__ */

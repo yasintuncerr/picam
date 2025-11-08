@@ -58,6 +58,13 @@ struct libcamera_source {
 	std::shared_ptr<Camera> camera;
 	ControlList controls;
 	
+	bool video_prev_ae_enabled_ = true;
+	int64_t video_prev_exposure_ = 0;
+	float video_prev_gain_ = 1.0f;
+	bool video_restore_needed_ = false;
+
+
+
 	int pfds[2];
 	
 	/* Video Stream resources */
@@ -90,7 +97,7 @@ struct libcamera_source {
 
 #ifdef STILL_CAPTURE
 	
-	int captureStill();
+	int captureStill(int64_t exposure_us, float gain);
 	void DNGOutputReady(DngBufferPtr buffer);
 	// DNG Output Ready Callback will be handled like output ready of MJPEG Encoder
 #endif
@@ -164,40 +171,86 @@ void libcamera_source::outputReady(void *mem, size_t bytesused, int64_t timestam
 }
 
 #ifdef STILL_CAPTURE
-int libcamera_source::captureStill()
+int libcamera_source::captureStill(int64_t exposure_us, float gain)
 {
-	std::unique_ptr<Request> request = camera->createRequest();
-	if (!request) {
-		return -ENOMEM;
-	}
-		
-	FrameBuffer *buffer_to_use = still.mapped_buffers_.begin()->first;
-	Stream *stream = config->at(1).stream();
-	int ret = request->addBuffer(stream, buffer_to_use);
-	if (ret < 0) {
-		return ret;
-	}
+    std::unique_ptr<Request> request = camera->createRequest();
+    if (!request) {
+        return -ENOMEM;
+    }
+    
+    ControlList &ctrls = request->controls();
 
-	still.capture_in_progress = true;
+    if (!video_restore_needed_) {
+        const ControlList &metadata = camera->properties();
+        
+        auto ae_enable = controls.get(controls::AeEnable);
+        if (ae_enable) {
+            video_prev_ae_enabled_ = *ae_enable;
+        }
+        
+        if (!video_prev_ae_enabled_) {
+            auto exposure = controls.get(controls::ExposureTime);
+            auto gain_val = controls.get(controls::AnalogueGain);
+            
+            if (exposure) video_prev_exposure_ = *exposure;
+            if (gain_val) video_prev_gain_ = *gain_val;
+        }
+        
+        video_restore_needed_ = true;
+    }
 
-	Request *raw_req = request.release();
-	ret = camera->queueRequest(raw_req);
-	if (ret < 0) {
-		delete raw_req;
-		still.capture_in_progress = false;
-		return ret;
-	}
-	return 0;
+    if (exposure_us > 0) {
+        ctrls.set(controls::AeEnable, false);
+        ctrls.set(controls::ExposureTime, exposure_us);
+        ctrls.set(controls::AnalogueGain, (gain > 0.0f) ? gain : 1.0f);
+    } else if (gain > 0.0f) {
+        ctrls.set(controls::AeEnable, true);
+        ctrls.set(controls::AnalogueGain, gain);
+    } else {
+        ctrls.set(controls::AeEnable, true);
+    }
+    
+    FrameBuffer *buffer_to_use = still.mapped_buffers_.begin()->first;
+    Stream *stream = config->at(1).stream();
+    int ret = request->addBuffer(stream, buffer_to_use);
+    if (ret < 0) {
+        return ret;
+    }
+
+    still.capture_in_progress = true;
+
+    Request *raw_req = request.release();
+    ret = camera->queueRequest(raw_req);
+    if (ret < 0) {
+        delete raw_req;
+        still.capture_in_progress = false;
+        return ret;
+    }
+    return 0;
 }
-
 void libcamera_source::DNGOutputReady(DngBufferPtr buffer)
 {
     if (still.capture_ready_cb) {
         still.capture_ready_cb(still.capture_ready_data, buffer.get());
     }
+    
     still.capture_in_progress = false;
+    
+    if (video_restore_needed_) {
+        if (video_prev_ae_enabled_) {
+            controls.set(controls::AeEnable, true);
+        } else {
+            controls.set(controls::AeEnable, false);
+            if (video_prev_exposure_ > 0) {
+                controls.set(controls::ExposureTime, video_prev_exposure_);
+            }
+            if (video_prev_gain_ > 0.0f) {
+                controls.set(controls::AnalogueGain, video_prev_gain_);
+            }
+        }
+        video_restore_needed_ = false;
+    }
 }
-
 #endif
 
 
@@ -225,7 +278,7 @@ static int libcamera_source_video_import_buffers(struct video_source *s, struct 
 static int libcamera_source_still_set_format(struct still_source *s, struct v4l2_pix_format *fmt);
 static int libcamera_source_still_alloc_buffer(struct still_source *s);
 static int libcamera_source_still_free_buffer(struct still_source *s);
-static int libcamera_source_still_capture(struct still_source *s);
+static int libcamera_source_still_capture(struct still_source *s, int64_t exposure_us, float gain);
 static int libcamera_source_still_capture_off(struct still_source *s);
 #endif
 
@@ -764,7 +817,7 @@ static int libcamera_source_still_capture_off(struct still_source *s)
 	return 0;
 }
 
-static int libcamera_source_still_capture(struct still_source *s)
+static int libcamera_source_still_capture(struct still_source *s, int64_t exposure_us, float gain)
 {
 	struct libcamera_source *src = to_libcamera_source(s, still_src);
 
@@ -773,14 +826,14 @@ static int libcamera_source_still_capture(struct still_source *s)
 	if (!src->video.stream_on)
 		return -EBUSY;
 
-	return src->captureStill();
+	return src->captureStill(exposure_us, gain);
 }
 
 static const struct still_source_ops libcamera_source_still_ops = {
 	.set_format 	= libcamera_source_still_set_format,
 	.alloc_buffer 	= libcamera_source_still_alloc_buffer,
 	.free_buffer 	= libcamera_source_still_free_buffer,
-	.capture 		= libcamera_source_still_capture,
+	.capture 		= (int (*)(still_source*, int64_t, float)) libcamera_source_still_capture,
 	.capture_off	= libcamera_source_still_capture_off,
 };
 

@@ -407,7 +407,10 @@ For testing purposes, you can run the application manually:
 
 ### Capturing Still Images
 
-Once the camera is running and the network is configured, you can capture RAW DNG images via HTTP:
+Once the camera is running and the network is configured, you can capture **RAW DNG** images via HTTP.  
+The `/capture` endpoint supports optional manual control parameters for exposure time and analogue gain (ISO).
+
+#### Basic Usage
 
 ```bash
 # Capture and save a DNG file
@@ -417,16 +420,39 @@ curl http://192.168.7.2:8080/capture > my_capture.dng
 wget http://192.168.7.2:8080/capture -O my_capture.dng
 ```
 
-The capture happens asynchronously:
-1. The HTTP request triggers a capture request
-2. The camera completes the capture in the background
-3. The callback is invoked with the captured buffer
-4. The DNG file is generated on-the-fly
-5. The file is served as the HTTP response
+#### Manual Control Examples
+```bash
+# Fix only analogue gain (ISO-priority mode)
+curl "http://192.168.7.2:8080/capture?gain=2.0" -o iso_priority.dng
 
-This process does not interrupt or affect the ongoing UVC video stream.
+# Fix both exposure time (in microseconds) and gain (fully manual mode)
+curl "http://192.168.7.2:8080/capture?exposure=15000&gain=4.0" -o manual_capture.dng
+```
 
-**Note:** Each capture request may take a few seconds depending on camera settings and resolution. The HTTP connection will remain open until the DNG file is fully generated and transmitted.
+#### Parameter Reference
+
+| Parameter | Type   | Description                                                                                   | Default |
+|------------|--------|------------------------------------------------------------------------------------------------|----------|
+| **exposure** | `int64` | Exposure time in microseconds. When set, automatic exposure (AE) is disabled. | Auto |
+| **gain** | `float` | Analogue gain (ISO multiplier). Values > 1.0 increase brightness and noise. | Auto |
+
+
+The capture process works asynchronously:
+
+1. An HTTP request initiates the capture.
+
+2. The camera completes image capture in the background.
+
+3. A callback receives the captured frame buffer.
+
+4. The DNG image is generated in real-time.
+
+5. The resulting file is streamed back as the HTTP response.
+
+6. This workflow operates independently of the live UVC video stream — capturing stills does not pause or interrupt video output.
+
+> **Note:** Depending on exposure time and resolution, a capture may take several seconds.  
+> The HTTP connection remains open until the DNG file is fully generated and transmitted.
 
 ---
 
@@ -516,13 +542,6 @@ This project is licensed under the **LGPL-2.1-or-later**, consistent with the up
 
 ---
 
-## Future Work
-
-- **Optimized DNG Writing:** Move DNG file generation to a separate worker thread pool to further minimize any potential latency
-- **Configurable Capture Settings:** Allow HTTP parameters to control exposure, gain, and resolution for still captures
-- **Multiple Format Support:** Add support for JPEG and TIFF output in addition to DNG
-- **Authentication:** Add optional HTTP authentication for capture endpoint
-- **WebSocket Support:** Real-time capture notifications and status updates
 
 ---
 
