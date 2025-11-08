@@ -25,9 +25,9 @@ int still_source_free_buffer(struct still_source *src)
     return src->ops->free_buffer(src);
 }
 
-int still_source_capture(struct still_source *src)
+int still_source_capture(struct still_source *src, int64_t exposure_us, float gain)
 {
-    return src->ops->capture(src);
+    return src->ops->capture(src, exposure_us, gain);
 }
 
 int still_source_capture_off(struct still_source *src)
