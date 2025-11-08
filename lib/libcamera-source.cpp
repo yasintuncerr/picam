@@ -174,16 +174,16 @@ int libcamera_source::captureStill(int64_t exposure_us, float gain)
 
 	ControlList &ctrls = request->controls();
 	if (exposure_us > 0) {
-        controls.set(controls::AeEnable, false);
-        controls.set(controls::ExposureTime, exposure_us);
-        controls.set(controls::AnalogueGain, (gain > 0.0f) ? gain : 1.0f);
+        ctrls.set(controls::AeEnable, false);
+        ctrls.set(controls::ExposureTime, exposure_us);
+        ctrls.set(controls::AnalogueGain, (gain > 0.0f) ? gain : 1.0f);
 
     } else if (gain > 0.0f) {
-        controls.set(controls::AeEnable, true); 
-        controls.set(controls::AnalogueGain, gain);
-    
+        ctrls.set(controls::AeEnable, true);
+        ctrls.set(controls::AnalogueGain, gain);
+
     } else {
-        controls.set(controls::AeEnable, true);
+        ctrls.set(controls::AeEnable, true);
     }
 	
 
