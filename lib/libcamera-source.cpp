@@ -181,7 +181,6 @@ int libcamera_source::captureStill(int64_t exposure_us, float gain)
     ControlList &ctrls = request->controls();
 
     if (!video_restore_needed_) {
-        const ControlList &metadata = camera->properties();
         
         auto ae_enable = controls.get(controls::AeEnable);
         if (ae_enable) {
