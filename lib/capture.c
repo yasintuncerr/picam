@@ -118,10 +118,24 @@ static void *client_thread_func(void *arg) {
     if (read(session->fd, request_buf, sizeof(request_buf) - 1) <= 0) {
         goto cleanup;
     }
+    if (strstr(request_buf, "OPTIONS") == request_buf) {
+        const char *response = 
+            "HTTP/1.1 204 No Content\r\n"
+            "Access-Control-Allow-Origin: *\r\n"
+            "Access-Control-Allow-Methods: GET, OPTIONS\r\n"
+            "Access-Control-Allow-Headers: *\r\n"
+            "Access-Control-Max-Age: 86400\r\n"
+            "\r\n";
+        write(session->fd, response, strlen(response));
+        goto cleanup;
+    }
 
     if (strstr(request_buf, "GET /capture") == request_buf) {
         if (!session->server->still_src) {
-            const char *response = "HTTP/1.1 503 Service Unavailable\r\n\r\n";
+            const char *response = "HTTP/1.1 503 Service Unavailable\r\n"
+                              "Access-Control-Allow-Origin: *\r\n"
+                              "Access-Control-Allow-Methods: GET, OPTIONS\r\n"
+                              "\r\n";
             write(session->fd, response, strlen(response));
         } else {
 #ifdef HAVE_LIBCAMERA
@@ -153,18 +167,25 @@ static void *client_thread_func(void *arg) {
                 }
                 
                 if (session->captured_data.mem && !session->captured_data.error) {
-                    char http_header[256];
+                    char http_header[512];
                     int len = snprintf(http_header, sizeof(http_header),
-                                       "HTTP/1.1 200 OK\r\n"
-                                       "Content-Type: image/dng\r\n"
-                                       "Content-Disposition: attachment; filename=\"capture.dng\"\r\n"
-                                       "Content-Length: %u\r\n\r\n",
-                                       session->captured_data.bytesused);
+                              "HTTP/1.1 200 OK\r\n"
+                              "Content-Type: image/dng\r\n"
+                              "Content-Disposition: attachment; filename=\"capture.dng\"\r\n"
+                              "Access-Control-Allow-Origin: *\r\n"           
+                              "Access-Control-Allow-Methods: GET, OPTIONS\r\n"  
+                              "Access-Control-Allow-Headers: *\r\n"
+                              "Content-Length: %u\r\n\r\n",
+                              session->captured_data.bytesused);
 
                     write(session->fd, http_header, len);
                     write(session->fd, session->captured_data.mem, session->captured_data.bytesused);
                 } else {
-                    const char *response = "HTTP/1.1 500 Internal Server Error\r\n\r\nCapture or DNG creation failed";
+                    const char *response = "HTTP/1.1 500 Internal Server Error\r\n"
+                                  "Access-Control-Allow-Origin: *\r\n"
+                                  "\r\n"
+                                  "Capture or DNG creation failed";
+
                     write(session->fd, response, strlen(response));
                 }
                 pthread_mutex_unlock(&session->mtx);
