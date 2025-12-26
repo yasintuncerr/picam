@@ -12,6 +12,7 @@
 #include <iostream>
 #include <map>
 #include <vector>
+#include <arm_neon.h>
 
 #include <tiffio.h>
 #include <cstring>
@@ -218,14 +219,56 @@ void packScanlineRaw10(void *output, const void *input, unsigned int width)
 
 void packScanlineRaw12(void *output, const void *input, unsigned int width)
 {
-	const uint8_t *in = static_cast<const uint8_t *>(input);
+	const uint16_t *in = static_cast<const uint16_t *>(input);
 	uint8_t *out = static_cast<uint8_t *>(output);
+	unsigned int i = 0;
 
-	for (unsigned int i = 0; i < width; i += 2) {
-		*out++ = in[1] << 4 | in[0] >> 4;
-		*out++ = in[0] << 4 | (in[3] & 0x0f);
-		*out++ = in[2];
-		in += 4;
+	// NEON ile 16'lı bloklar halinde işle (Hızlandırılmış kısım)
+	// Pi Zero 2W (ARMv8/v7) NEON destekler.
+	for (; i <= width - 16; i += 16) {
+		// 16 piksel yükle (128-bit x 2)
+		uint16x8_t in0 = vld1q_u16(in + i);      // Pikseller 0-7
+		uint16x8_t in1 = vld1q_u16(in + i + 8);  // Pikseller 8-15
+
+		// Çift ve Tek pikselleri ayır (Deinterleave)
+		// val[0] = Çiftler (0, 2, 4...), val[1] = Tekler (1, 3, 5...)
+		uint16x8x2_t unzipped = vuzpq_u16(in0, in1);
+		uint16x8_t evens = unzipped.val[0]; 
+		uint16x8_t odds = unzipped.val[1];
+
+		// Byte 0: Çift pikselin üst 8 biti (>> 4)
+		uint8x8_t b0 = vshrn_n_u16(evens, 4);
+
+		// Byte 2: Tek pikselin alt 8 biti (& 0xFF)
+		uint8x8_t b2 = vmovn_u16(odds);
+
+		// Byte 1: (Çift & 0xF) << 4 | (Tek >> 8)
+		uint16x8_t e_masked = vandq_u16(evens, vdupq_n_u16(0x0F));
+		uint16x8_t e_shifted = vshlq_n_u16(e_masked, 4);
+		uint16x8_t o_shifted = vshrq_n_u16(odds, 8);
+		uint16x8_t b1_16 = vorrq_u16(e_shifted, o_shifted);
+		uint8x8_t b1 = vmovn_u16(b1_16);
+
+		// 3 kanallı (Byte0, Byte1, Byte2) olarak belleğe yaz
+		// vst3 komutu bunları otomatik olarak doğru sırada dizer (0,1,2, 0,1,2...)
+		uint8x8x3_t to_store;
+		to_store.val[0] = b0;
+		to_store.val[1] = b1;
+		to_store.val[2] = b2;
+
+		vst3_u8(out, to_store);
+
+		out += 24; // 16 piksel * 12 bit / 8 = 24 byte
+	}
+
+	// Kalan pikselleri (eğer genişlik 16'nın katı değilse) eski yöntemle işle
+	for (; i < width; i += 2) {
+		uint16_t p0 = in[i];
+		uint16_t p1 = in[i+1]; // Eğer width tek sayı ise burada sınır kontrolü gerekebilir ama genelde çifttir.
+		
+		*out++ = p0 >> 4;
+		*out++ = ((p0 & 0x0F) << 4) | (p1 >> 8);
+		*out++ = p1 & 0xFF;
 	}
 }
 
@@ -604,8 +647,10 @@ int DNGWriter::writeInternal( TIFF *tif, const Camera *camera,
 	 * or a thumbnail scanline. The latter will always be much smaller than
 	 * the former as we downscale by 16 in both directions.
 	 */
-	std::vector<uint8_t> scanline((config.size.width * info->bitsPerSample + 7) / 8);
-
+	size_t requiredSize = (config.size.width * info->bitsPerSample + 7) / 8;
+	if (scanlineBuffer_.size() < requiredSize) {
+        scanlineBuffer_.resize(requiredSize);
+    }
 	toff_t rawIFDOffset = 0;
 	toff_t exifIFDOffset = 0;
 
@@ -704,10 +749,10 @@ int DNGWriter::writeInternal( TIFF *tif, const Camera *camera,
 	/* Write the thumbnail. */
 	const uint8_t *row = static_cast<const uint8_t *>(data);
 	for (unsigned int y = 0; y < config.size.height / 16; y++) {
-		info->thumbScanline(*info, scanline.data(), row,
+		info->thumbScanline(*info, scanlineBuffer_.data(), row,
 				    config.size.width / 16, config.stride);
 
-		if (TIFFWriteScanline(tif, scanline.data(), y, 0) != 1) {
+		if (TIFFWriteScanline(tif, scanlineBuffer_.data(), y, 0) != 1) {
 			std::cerr << "Failed to write thumbnail scanline"
 				  << std::endl;
 			TIFFClose(tif);
@@ -807,9 +852,9 @@ int DNGWriter::writeInternal( TIFF *tif, const Camera *camera,
 	/* Write RAW content. */
 	row = static_cast<const uint8_t *>(data);
 	for (unsigned int y = 0; y < config.size.height; y++) {
-		info->packScanline(scanline.data(), row, config.size.width);
+		info->packScanline(scanlineBuffer_.data(), row, config.size.width);
 
-		if (TIFFWriteScanline(tif, scanline.data(), y, 0) != 1) {
+		if (TIFFWriteScanline(tif, scanlineBuffer_.data(), y, 0) != 1) {
 			std::cerr << "Failed to write RAW scanline"
 				  << std::endl;
 			TIFFClose(tif);
