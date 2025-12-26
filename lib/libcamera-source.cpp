@@ -225,7 +225,7 @@ static int libcamera_source_video_import_buffers(struct video_source *s, struct 
 static int libcamera_source_still_set_format(struct still_source *s, struct v4l2_pix_format *fmt);
 static int libcamera_source_still_alloc_buffer(struct still_source *s);
 static int libcamera_source_still_free_buffer(struct still_source *s);
-static int libcamera_source_still_capture(struct still_source *s);
+static int libcamera_source_still_capture(struct still_source *s, int64_t exposure_us, float gain);
 static int libcamera_source_still_capture_off(struct still_source *s);
 #endif
 
@@ -765,7 +765,7 @@ static int libcamera_source_still_capture_off(struct still_source *s)
 	return 0;
 }
 
-static int libcamera_source_still_capture(struct still_source *s)
+static int libcamera_source_still_capture(struct still_source *s, int64_t exposure_us, float gain)
 {
 	struct libcamera_source *src = to_libcamera_source(s, still_src);
 
