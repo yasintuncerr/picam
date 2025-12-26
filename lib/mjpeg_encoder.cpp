@@ -34,7 +34,7 @@ MjpegEncoder::MjpegEncoder()
     
     // HW modunda tek bir encode thread yeterli (seri işlem)
     encode_thread_ = std::thread(std::bind(&MjpegEncoder::encodeThread, this, 0));
-    std::cout << "[MjpegEncoder] Using Hardware Encoding (/dev/video11) with High Quality" << std::endl;
+    std::cout << "[MjpegEncoder] Using Hardware Encoding (/dev/video11) (High Bitrate)" << std::endl;
 #else
     // --- SW INIT ---
     // SW modunda çoklu thread
@@ -101,7 +101,8 @@ StreamInfo MjpegEncoder::getStreamInfo(libcamera::Stream *stream)
 
 #define M2M_DEVICE "/dev/video11"
 #define CAPTURE_BUFFER_COUNT 4
-#define JPEG_QUALITY 100  // Kaliteyi artırdık
+#define JPEG_QUALITY 95         // Kalite %95 (Artifactleri azaltır)
+#define VIDEO_BITRATE 40000000  // 40 Mbps (Banding/İzohips sorununu çözen asıl ayar bu)
 
 void MjpegEncoder::hw_uninit()
 {
@@ -138,17 +139,26 @@ int MjpegEncoder::hw_init(const StreamInfo &info)
         return -1;
     }
 
-    // 1. JPEG QUALITY SETTING
     struct v4l2_control ctrl;
+
+    // 1. SET BITRATE (ASIL ÇÖZÜM)
+    // Varsayılan bitrate düşük olduğu için kaliteyi düşürüyordu.
+    ctrl.id = V4L2_CID_MPEG_VIDEO_BITRATE;
+    ctrl.value = VIDEO_BITRATE;
+    if (ioctl(fd_m2m_, VIDIOC_S_CTRL, &ctrl) < 0) {
+        std::cerr << "HW: Failed to set Bitrate to " << VIDEO_BITRATE << std::endl;
+    } else {
+        std::cout << "HW: Bitrate set to " << (VIDEO_BITRATE / 1000000) << " Mbps" << std::endl;
+    }
+
+    // 2. JPEG QUALITY SETTING
     ctrl.id = V4L2_CID_JPEG_COMPRESSION_QUALITY;
     ctrl.value = JPEG_QUALITY;
     if (ioctl(fd_m2m_, VIDIOC_S_CTRL, &ctrl) < 0) {
-        std::cerr << "HW: Failed to set JPEG Quality to " << JPEG_QUALITY << " (Continuing anyway)" << std::endl;
-    } else {
-        std::cout << "HW: JPEG Quality set to " << JPEG_QUALITY << std::endl;
+        std::cerr << "HW: Failed to set JPEG Quality" << std::endl;
     }
 
-    // 2. OUTPUT FORMAT
+    // 3. OUTPUT FORMAT
     struct v4l2_format fmt = {};
     fmt.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
     fmt.fmt.pix_mp.width = info.width;
@@ -163,7 +173,7 @@ int MjpegEncoder::hw_init(const StreamInfo &info)
         return -1;
     }
 
-    // 3. CAPTURE FORMAT
+    // 4. CAPTURE FORMAT
     memset(&fmt, 0, sizeof(fmt));
     fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
     fmt.fmt.pix_mp.width = info.width;
@@ -177,7 +187,7 @@ int MjpegEncoder::hw_init(const StreamInfo &info)
         return -1;
     }
 
-    // 4. Request Buffers
+    // 5. Request Buffers
     struct v4l2_requestbuffers req = {};
     req.count = 1;
     req.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
@@ -190,7 +200,7 @@ int MjpegEncoder::hw_init(const StreamInfo &info)
     if (ioctl(fd_m2m_, VIDIOC_REQBUFS, &req) < 0) return -1;
     cap_buf_cnt_ = req.count;
 
-    // 5. MMAP
+    // 6. MMAP
     cap_buffers_ = (struct v4l2_buffer *)calloc(cap_buf_cnt_, sizeof(*cap_buffers_));
     cap_mem_ = (void **)calloc(cap_buf_cnt_, sizeof(void *));
 
@@ -210,7 +220,7 @@ int MjpegEncoder::hw_init(const StreamInfo &info)
         ioctl(fd_m2m_, VIDIOC_QBUF, &buf);
     }
 
-    // 6. Stream ON
+    // 7. Stream ON
     int type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
     ioctl(fd_m2m_, VIDIOC_STREAMON, &type);
     type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
@@ -224,7 +234,6 @@ int MjpegEncoder::hw_process(EncodeItem &item, size_t &bytes_used)
 {
     if (!hw_initialized_ && hw_init(item.info) < 0) return -1;
 
-    // Queue Output
     struct v4l2_buffer buf = {};
     struct v4l2_plane planes[1];
     memset(&buf, 0, sizeof(buf));
@@ -246,7 +255,6 @@ int MjpegEncoder::hw_process(EncodeItem &item, size_t &bytes_used)
         return -1;
     }
 
-    // Dequeue Capture
     struct v4l2_buffer cap_buf = {};
     struct v4l2_plane cap_planes[1];
     memset(&cap_buf, 0, sizeof(cap_buf));
@@ -316,7 +324,6 @@ void MjpegEncoder::encodeThread(int num)
     }
 }
 
-// FIX: HW Modu için düzeltilmiş OutputThread (Dizi ve Loop YOK)
 void MjpegEncoder::outputThread()
 {
     OutputItem item = {};
@@ -324,8 +331,6 @@ void MjpegEncoder::outputThread()
     {
         {
             std::unique_lock<std::mutex> lock(output_mutex_);
-            
-            // Tek bir queue olduğu için döngüye gerek yok
             while (output_queue_.empty() && !abortOutput_) {
                 output_cond_var_.wait_for(lock, std::chrono::milliseconds(200));
             }
