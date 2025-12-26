@@ -343,6 +343,9 @@ void MjpegEncoder::outputThread()
 //                          SOFTWARE IMPLEMENTATION (CPU)
 // ----------------------------------------------------------------------------
 
+// Tip tanımını basitleştirdik, karmaşık versiyon kontrollerini kaldırdık.
+typedef unsigned long jpeg_mem_len_t;
+
 void MjpegEncoder::encodeJPEG(struct jpeg_compress_struct &cinfo, EncodeItem &item,
                               uint8_t *&encoded_buffer, size_t &buffer_len)
 {
@@ -434,15 +437,13 @@ void MjpegEncoder::encodeThread(int num)
 void MjpegEncoder::outputThread()
 {
     OutputItem item;
-    // index_ sayacını SW modunda da devreden çıkarıyoruz, 
-    // çünkü multithreaded ortamda karelerin sırasız bitmesi donmaya yol açmasın.
+    // SW modunda basit FIFO
     while (true)
     {
         {
             std::unique_lock<std::mutex> lock(output_mutex_);
             bool found = false;
             
-            // FIX: Tüm kuyrukları kontrol et ve ilk bulduğunu al (Sıra gözetmeden)
             while (!found && !abortOutput_) {
                 for (int i = 0; i < NUM_ENC_THREADS; i++) {
                     if (!output_queue_[i].empty()) {
