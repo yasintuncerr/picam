@@ -39,6 +39,51 @@ static void *client_thread_func(void *arg);
 static void *http_server_thread(void *arg);
 static void still_capture_ready_cb(void *data, struct still_buffer *buffer);
 
+static int64_t parse_exposure_from_request(const char *request_buf) {
+    const char *query = strchr(request_buf, '?');
+    if (!query) {
+        return 0; 
+    }
+
+    const char *exposure_param = strcasestr(query, "exposure=");
+    if (!exposure_param) {
+        return 0; 
+    }
+
+    const char *value_str = exposure_param + strlen("exposure=");
+    char *end_ptr;
+    int64_t exposure_us = strtol(value_str, &end_ptr, 10);
+
+    if (value_str == end_ptr || exposure_us < 0) {
+        return 0;
+    }
+
+    return exposure_us;
+}
+
+static float parse_gain_from_request(const char *request_buf) {
+    const char *query = strchr(request_buf, '?');
+    if (!query) {
+        return 1.0f; 
+    }
+
+    const char *gain_param = strcasestr(query, "gain=");
+    if (!gain_param) {
+        return 1.0f; 
+    }
+
+    const char *value_str = gain_param + strlen("gain=");
+    char *end_ptr;
+    float gain = strtof(value_str, &end_ptr);
+
+    if (value_str == end_ptr || gain < 1.0f) {
+        return 1.0f;
+    }
+
+    return gain;
+}
+
+
 // Callback to receive the final DNG data from the C++ side.
 static void still_capture_ready_cb(void *data, struct still_buffer *buffer_from_camera) {
     struct http_client_session *session = (struct http_client_session *)data;
@@ -56,7 +101,7 @@ static void still_capture_ready_cb(void *data, struct still_buffer *buffer_from_
             session->captured_data.timestamp = buffer_from_camera->timestamp;
             session->captured_data.error = false;
         } else {
-            fprintf(stderr, "İstemci DNG arabelleği için bellek ayrılamadı\n");
+            fprintf(stderr, "Failed to allocate memory for client DNG buffer\n");
         }
     }
 
@@ -73,15 +118,46 @@ static void *client_thread_func(void *arg) {
     if (read(session->fd, request_buf, sizeof(request_buf) - 1) <= 0) {
         goto cleanup;
     }
+    if (strstr(request_buf, "OPTIONS") == request_buf) {
+        const char *response = 
+            "HTTP/1.1 204 No Content\r\n"
+            "Access-Control-Allow-Origin: *\r\n"
+            "Access-Control-Allow-Methods: GET, OPTIONS\r\n"
+            "Access-Control-Allow-Headers: *\r\n"
+            "Access-Control-Max-Age: 86400\r\n"
+            "\r\n";
+        write(session->fd, response, strlen(response));
+        goto cleanup;
+    }
 
     if (strstr(request_buf, "GET /capture") == request_buf) {
         if (!session->server->still_src) {
-            const char *response = "HTTP/1.1 503 Service Unavailable\r\n\r\n";
+            const char *response = "HTTP/1.1 503 Service Unavailable\r\n"
+                              "Access-Control-Allow-Origin: *\r\n"
+                              "Access-Control-Allow-Methods: GET, OPTIONS\r\n"
+                              "\r\n";
             write(session->fd, response, strlen(response));
         } else {
 #ifdef HAVE_LIBCAMERA
+            int64_t exposure_us = 0;
+            float gain = 0.0f;
+
+            exposure_us = parse_exposure_from_request(request_buf);
+            if (exposure_us > 0) {
+                fprintf(stdout, "HTTP capture: Manual exposure time requested: %ld us\n", exposure_us);
+            }
+
+            gain = parse_gain_from_request(request_buf);
+
+            if (gain > 0) {
+                fprintf(stdout, "HTTP capture: Manual gain requested: %.2f\n", gain);
+            }
+
+
+
             libcamera_still_source_set_callback(session->server->still_src, still_capture_ready_cb, session);
-            if (still_source_capture(session->server->still_src) < 0) {
+
+            if (still_source_capture(session->server->still_src, exposure_us, gain) < 0) {
                 const char *response = "HTTP/1.1 500 Internal Server Error\r\n\r\nCapture trigger failed";
                 write(session->fd, response, strlen(response));
             } else {
@@ -91,18 +167,25 @@ static void *client_thread_func(void *arg) {
                 }
                 
                 if (session->captured_data.mem && !session->captured_data.error) {
-                    char http_header[256];
+                    char http_header[512];
                     int len = snprintf(http_header, sizeof(http_header),
-                                       "HTTP/1.1 200 OK\r\n"
-                                       "Content-Type: image/dng\r\n"
-                                       "Content-Disposition: attachment; filename=\"capture.dng\"\r\n"
-                                       "Content-Length: %u\r\n\r\n",
-                                       session->captured_data.bytesused);
+                              "HTTP/1.1 200 OK\r\n"
+                              "Content-Type: image/dng\r\n"
+                              "Content-Disposition: attachment; filename=\"capture.dng\"\r\n"
+                              "Access-Control-Allow-Origin: *\r\n"           
+                              "Access-Control-Allow-Methods: GET, OPTIONS\r\n"  
+                              "Access-Control-Allow-Headers: *\r\n"
+                              "Content-Length: %u\r\n\r\n",
+                              session->captured_data.bytesused);
 
                     write(session->fd, http_header, len);
                     write(session->fd, session->captured_data.mem, session->captured_data.bytesused);
                 } else {
-                    const char *response = "HTTP/1.1 500 Internal Server Error\r\n\r\nCapture or DNG creation failed";
+                    const char *response = "HTTP/1.1 500 Internal Server Error\r\n"
+                                  "Access-Control-Allow-Origin: *\r\n"
+                                  "\r\n"
+                                  "Capture or DNG creation failed";
+
                     write(session->fd, response, strlen(response));
                 }
                 pthread_mutex_unlock(&session->mtx);
