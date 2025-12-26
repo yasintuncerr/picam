@@ -94,7 +94,7 @@ struct libcamera_source {
 
 #ifdef STILL_CAPTURE
 	
-	int captureStill();
+	int captureStill(int64_t exposure_us, float gain);
 	void DNGOutputReady(DngBufferPtr buffer);
 	// DNG Output Ready Callback will be handled like output ready of MJPEG Encoder
 #endif
@@ -824,7 +824,7 @@ static int libcamera_source_still_capture(struct still_source *s, int64_t exposu
 	if (!src->video.stream_on)
 		return -EBUSY;
 
-	return src->captureStill();
+	return src->captureStill(exposure_us, gain);
 }
 
 static const struct still_source_ops libcamera_source_still_ops = {
