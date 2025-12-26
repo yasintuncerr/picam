@@ -21,7 +21,6 @@
 MjpegEncoder::MjpegEncoder()
     : abortEncode_(false), abortOutput_(false), index_(0)
 {
-    // Output thread her zaman çalışır
     output_thread_ = std::thread(&MjpegEncoder::outputThread, this);
 
 #ifdef ENABLE_HW_MJPEG
@@ -32,12 +31,10 @@ MjpegEncoder::MjpegEncoder()
     cap_mem_ = nullptr;
     cap_buf_cnt_ = 0;
     
-    // HW modunda tek bir encode thread yeterli (seri işlem)
     encode_thread_ = std::thread(std::bind(&MjpegEncoder::encodeThread, this, 0));
     std::cout << "[MjpegEncoder] Using Hardware Encoding (/dev/video11) (High Bitrate)" << std::endl;
 #else
     // --- SW INIT ---
-    // SW modunda çoklu thread
     for (int i = 0; i < NUM_ENC_THREADS; i++)
         encode_thread_[i] = std::thread(std::bind(&MjpegEncoder::encodeThread, this, i));
     std::cout << "[MjpegEncoder] Using Software Encoding (libjpeg)" << std::endl;
@@ -46,7 +43,6 @@ MjpegEncoder::MjpegEncoder()
 
 MjpegEncoder::~MjpegEncoder()
 {
-    // Encode threadlerini durdur
     abortEncode_ = true;
     encode_cond_var_.notify_all();
 
@@ -59,8 +55,6 @@ MjpegEncoder::~MjpegEncoder()
             encode_thread_[i].join();
     }
 #endif
-
-    // Output threadini durdur
     abortOutput_ = true;
     output_cond_var_.notify_all();
     if (output_thread_.joinable()) output_thread_.join();
@@ -101,8 +95,8 @@ StreamInfo MjpegEncoder::getStreamInfo(libcamera::Stream *stream)
 
 #define M2M_DEVICE "/dev/video11"
 #define CAPTURE_BUFFER_COUNT 4
-#define JPEG_QUALITY 95         // Kalite %95 (Artifactleri azaltır)
-#define VIDEO_BITRATE 40000000  // 40 Mbps (Banding/İzohips sorununu çözen asıl ayar bu)
+#define JPEG_QUALITY 95         //  Quality setting for hardware MJPEG encoder
+#define VIDEO_BITRATE 40000000  // 40 Mbps // Bitrate setting for hardware MJPEG encoder
 
 void MjpegEncoder::hw_uninit()
 {
@@ -141,8 +135,7 @@ int MjpegEncoder::hw_init(const StreamInfo &info)
 
     struct v4l2_control ctrl;
 
-    // 1. SET BITRATE (ASIL ÇÖZÜM)
-    // Varsayılan bitrate düşük olduğu için kaliteyi düşürüyordu.
+    // 1. SET BITRATE 
     ctrl.id = V4L2_CID_MPEG_VIDEO_BITRATE;
     ctrl.value = VIDEO_BITRATE;
     if (ioctl(fd_m2m_, VIDIOC_S_CTRL, &ctrl) < 0) {
