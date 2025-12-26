@@ -316,11 +316,10 @@ void MjpegEncoder::encodeThread(int num)
 
 void MjpegEncoder::outputThread()
 {
-    OutputItem item;
+    OutputItem item = {}; // <-- DÜZELTİLDİ: Başlatılmamış değişken hatasını önler
     while (true) {
         {
             std::unique_lock<std::mutex> lock(output_mutex_);
-            // FIX: İndex sıralamasını bekleme (freeze sebebi). FIFO mantığıyla işle.
             while (output_queue_.empty() && !abortOutput_) {
                 output_cond_var_.wait_for(lock, std::chrono::milliseconds(200));
             }
@@ -331,7 +330,6 @@ void MjpegEncoder::outputThread()
             output_queue_.pop();
         }
         
-        // İndex kontrolü kaldırıldı, gelen veriyi direkt gönderiyoruz.
         if (output_ready_callback_)
             output_ready_callback_(item.mem, item.bytes_used, item.timestamp_us, item.cookie);
     }
@@ -343,7 +341,6 @@ void MjpegEncoder::outputThread()
 //                          SOFTWARE IMPLEMENTATION (CPU)
 // ----------------------------------------------------------------------------
 
-// Tip tanımını basitleştirdik, karmaşık versiyon kontrollerini kaldırdık.
 typedef unsigned long jpeg_mem_len_t;
 
 void MjpegEncoder::encodeJPEG(struct jpeg_compress_struct &cinfo, EncodeItem &item,
@@ -436,8 +433,7 @@ void MjpegEncoder::encodeThread(int num)
 
 void MjpegEncoder::outputThread()
 {
-    OutputItem item;
-    // SW modunda basit FIFO
+    OutputItem item = {}; // <-- DÜZELTİLDİ: Başlatılmamış değişken hatasını önler
     while (true)
     {
         {
