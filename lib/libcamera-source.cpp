@@ -283,7 +283,8 @@ static void libcamera_source_video_process(libcamera_source *src)
 		void *dest = src->video.buffers.buffers[request->cookie()].mem;
 		unsigned int size = span->second.size();
 
-		src->video.encoder->EncodeBuffer(mem, dest, size, info, timestamp_ns / 1000, request->cookie());
+		int fd = framebuf->planes()[0].fd.get();
+		src->video.encoder->EncodeBuffer(mem, dest, size, info, timestamp_ns / 1000, request->cookie(), fd);
 
 		return;
 	}
