@@ -1,0 +1,1 @@
+option('hw_mjpeg', type : 'boolean', value : false, description : 'Enable Hardware MJPEG Encoder on /dev/video11')
