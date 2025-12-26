@@ -32,13 +32,14 @@ struct StreamInfo
 	std::optional<libcamera::ColorSpace> colour_space;
 };
 
-typedef void(*OutputReadyCallback)(void *mem, size_t bytes_used, int64_t timestamp_us, unsigned int cookie);
+typedef std::function<void(void *mem, size_t bytes_used, int64_t timestamp_us, unsigned int cookie)> OutputReadyCallback;
 
 class MjpegEncoder
 {
 public:
 	MjpegEncoder();
 	~MjpegEncoder();
+	void SetOutputReadyCallback(OutputReadyCallback callback) { output_ready_callback_ = callback; }
 
 	void EncodeBuffer(void *mem, void *dest, unsigned int size,
 			  StreamInfo const &info, int64_t timestamp_us,
@@ -52,6 +53,7 @@ private:
 		unsigned int size;
 		StreamInfo info;
 		int64_t timestamp_us;
+		unsigned int index;
 		unsigned int cookie;
 		int fd;
 	};
@@ -72,7 +74,7 @@ private:
 	std::mutex encode_mutex_;
 	std::condition_variable encode_cond_var_;
 	std::queue<EncodeItem> encode_queue_;
-	
+
 	std::mutex output_mutex_;
 	std::condition_variable output_cond_var_;
 
