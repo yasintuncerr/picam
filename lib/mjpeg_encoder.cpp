@@ -61,7 +61,7 @@ void MjpegEncoder::EncodeBuffer(void *mem, void *dest, unsigned int size,
 {
 	std::lock_guard<std::mutex> lock(encode_mutex_);
 	// fd parametresini yapıya ekle (CPU modunda kullanılmasa bile)
-	EncodeItem item = { mem, dest, size, info, timestamp_us, index_++, cookie, fd };
+	EncodeItem item = { mem, dest, size, info, timestamp_us, index_++, cookie, fd};
 
 	encode_queue_.push(item);
 	encode_cond_var_.notify_all();

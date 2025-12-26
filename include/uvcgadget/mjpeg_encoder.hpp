@@ -62,7 +62,7 @@ private:
 		int64_t timestamp_us;
 		unsigned int cookie;
 		unsigned int index;
-	}
+	};
 
 	void encodeThread(int num);
 	void outputThread();
@@ -72,11 +72,7 @@ private:
 	std::mutex encode_mutex_;
 	std::condition_variable encode_cond_var_;
 	std::queue<EncodeItem> encode_queue_;
-
-	std::mutex output_mutex_;
-	std::condition_variable encode_cond_var_;
-	std::queue<EncodeItem> encode_queue_;
-
+	
 	std::mutex output_mutex_;
 	std::condition_variable output_cond_var_;
 
