@@ -37,7 +37,7 @@ libuvcgadget = shared_library('uvcgadget',
                               libuvcgadget_sources,
                               'dng-writer.cpp',
                               dependencies : [libcamera, libjpeg, threads, libtiff],
-                              cpp_args : ['-DHAVE_TIFF','-DSTILL_CAPTURE', '-mfpu=neon-fp-armv8', '-mcpu=cortex-a53', '-mtune=cortex-a53', '-O3', '-DNDEBUG', '-ftree-vectorize],
+                              cpp_args : ['-DHAVE_TIFF','-DSTILL_CAPTURE', '-mfpu=neon-fp-armv8', '-mcpu=cortex-a53', '-mtune=cortex-a53', '-O3', '-DNDEBUG', '-ftree-vectorize'],
                               version : uvc_gadget_version,
                               install : true,
                               include_directories : [includes, config_includes])
