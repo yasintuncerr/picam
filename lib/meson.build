@@ -26,6 +26,10 @@ if libcamera.found() and libjpeg.found() and threads.found()
   libuvcgadget_sources += files(['mjpeg_encoder.cpp'])
 endif
 
+if get_option('hw_mjpeg')
+    add_project_arguments('-DENABLE_HW_MJPEG', language : 'cpp')
+endif
+
 # Add libtiff dependency
 libtiff = dependency('libtiff-4', required : true)
 
@@ -33,7 +37,7 @@ libuvcgadget = shared_library('uvcgadget',
                               libuvcgadget_sources,
                               'dng-writer.cpp',
                               dependencies : [libcamera, libjpeg, threads, libtiff],
-                              cpp_args : ['-DHAVE_TIFF','-DSTILL_CAPTURE'],
+                              cpp_args : ['-DHAVE_TIFF','-DSTILL_CAPTURE', '-mfpu=neon-fp-armv8', '-mcpu=cortex-a53', '-mtune=cortex-a53', '-O3', '-DNDEBUG', '-ftree-vectorize],
                               version : uvc_gadget_version,
                               install : true,
                               include_directories : [includes, config_includes])
