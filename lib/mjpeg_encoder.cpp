@@ -101,7 +101,7 @@ StreamInfo MjpegEncoder::getStreamInfo(libcamera::Stream *stream)
 
 #define M2M_DEVICE "/dev/video11"
 #define CAPTURE_BUFFER_COUNT 4
-#define JPEG_QUALITY 90  // Kaliteyi artırdık
+#define JPEG_QUALITY 100  // Kaliteyi artırdık
 
 void MjpegEncoder::hw_uninit()
 {
