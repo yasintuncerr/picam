@@ -34,7 +34,7 @@ MjpegEncoder::MjpegEncoder()
     
     // HW modunda tek bir encode thread yeterli (seri işlem)
     encode_thread_ = std::thread(std::bind(&MjpegEncoder::encodeThread, this, 0));
-    std::cout << "[MjpegEncoder] Using Hardware Encoding (/dev/video11)" << std::endl;
+    std::cout << "[MjpegEncoder] Using Hardware Encoding (/dev/video11) with High Quality" << std::endl;
 #else
     // --- SW INIT ---
     // SW modunda çoklu thread
@@ -71,7 +71,6 @@ void MjpegEncoder::EncodeBuffer(void *mem, void *dest, unsigned int size,
                                 unsigned int cookie, int fd)
 {
     std::lock_guard<std::mutex> lock(encode_mutex_);
-    // İndex artıyor ama outputThread artık buna sıkı sıkıya bağlı değil
     EncodeItem item = { mem, dest, size, info, timestamp_us, index_++, cookie, fd };
     
     encode_queue_.push(item);
@@ -102,6 +101,7 @@ StreamInfo MjpegEncoder::getStreamInfo(libcamera::Stream *stream)
 
 #define M2M_DEVICE "/dev/video11"
 #define CAPTURE_BUFFER_COUNT 4
+#define JPEG_QUALITY 90  // Kaliteyi artırdık (0-100 arası, varsayılan düşüktü)
 
 void MjpegEncoder::hw_uninit()
 {
@@ -138,15 +138,24 @@ int MjpegEncoder::hw_init(const StreamInfo &info)
         return -1;
     }
 
-    // 1. OUTPUT FORMAT (Input to Encoder: YUV420/NV12)
+    // 1. JPEG QUALITY SETTING (CRITICAL FOR NOISE REDUCTION)
+    struct v4l2_control ctrl;
+    ctrl.id = V4L2_CID_JPEG_COMPRESSION_QUALITY;
+    ctrl.value = JPEG_QUALITY;
+    if (ioctl(fd_m2m_, VIDIOC_S_CTRL, &ctrl) < 0) {
+        std::cerr << "HW: Failed to set JPEG Quality to " << JPEG_QUALITY << " (Continuing anyway)" << std::endl;
+    } else {
+        std::cout << "HW: JPEG Quality set to " << JPEG_QUALITY << std::endl;
+    }
+
+    // 2. OUTPUT FORMAT (Input to Encoder: YUV420/NV12)
     struct v4l2_format fmt = {};
     fmt.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
     fmt.fmt.pix_mp.width = info.width;
     fmt.fmt.pix_mp.height = info.height;
-    // RPi encoder genellikle NV12 veya I420 kabul eder. Libcamera ile uyumlu olması için:
     fmt.fmt.pix_mp.pixelformat = V4L2_PIX_FMT_YUV420; 
     fmt.fmt.pix_mp.num_planes = 1;
-    // CRITICAL FIX: Stride (bytesperline) ayarı yeşil ekranı çözer
+    // CRITICAL FIX: Stride (bytesperline) for green frame issue
     fmt.fmt.pix_mp.plane_fmt[0].bytesperline = info.stride;
     fmt.fmt.pix_mp.field = V4L2_FIELD_NONE;
 
@@ -155,7 +164,7 @@ int MjpegEncoder::hw_init(const StreamInfo &info)
         return -1;
     }
 
-    // 2. CAPTURE FORMAT (Output from Encoder: MJPEG)
+    // 3. CAPTURE FORMAT (Output from Encoder: MJPEG)
     memset(&fmt, 0, sizeof(fmt));
     fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
     fmt.fmt.pix_mp.width = info.width;
@@ -169,21 +178,21 @@ int MjpegEncoder::hw_init(const StreamInfo &info)
         return -1;
     }
 
-    // 3. Request Buffers (OUTPUT - DMABUF)
+    // 4. Request Buffers (OUTPUT - DMABUF)
     struct v4l2_requestbuffers req = {};
     req.count = 1;
     req.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
     req.memory = V4L2_MEMORY_DMABUF;
     if (ioctl(fd_m2m_, VIDIOC_REQBUFS, &req) < 0) return -1;
 
-    // 4. Request Buffers (CAPTURE - MMAP)
+    // 5. Request Buffers (CAPTURE - MMAP)
     req.count = CAPTURE_BUFFER_COUNT;
     req.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
     req.memory = V4L2_MEMORY_MMAP;
     if (ioctl(fd_m2m_, VIDIOC_REQBUFS, &req) < 0) return -1;
     cap_buf_cnt_ = req.count;
 
-    // 5. MMAP Capture Buffers
+    // 6. MMAP Capture Buffers
     cap_buffers_ = (struct v4l2_buffer *)calloc(cap_buf_cnt_, sizeof(*cap_buffers_));
     cap_mem_ = (void **)calloc(cap_buf_cnt_, sizeof(void *));
 
@@ -204,7 +213,7 @@ int MjpegEncoder::hw_init(const StreamInfo &info)
         ioctl(fd_m2m_, VIDIOC_QBUF, &buf);
     }
 
-    // 6. Stream ON
+    // 7. Stream ON
     int type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
     ioctl(fd_m2m_, VIDIOC_STREAMON, &type);
     type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
@@ -316,20 +325,28 @@ void MjpegEncoder::encodeThread(int num)
 
 void MjpegEncoder::outputThread()
 {
-    OutputItem item = {}; // <-- DÜZELTİLDİ: Başlatılmamış değişken hatasını önler
-    while (true) {
+    OutputItem item = {}; // Düzeltilmiş: Değişken başlatıldı
+    while (true)
+    {
         {
             std::unique_lock<std::mutex> lock(output_mutex_);
-            while (output_queue_.empty() && !abortOutput_) {
-                output_cond_var_.wait_for(lock, std::chrono::milliseconds(200));
+            bool found = false;
+            
+            while (!found && !abortOutput_) {
+                for (int i = 0; i < NUM_ENC_THREADS; i++) {
+                    if (!output_queue_[i].empty()) {
+                        item = output_queue_[i].front();
+                        output_queue_[i].pop();
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found)
+                    output_cond_var_.wait_for(lock, std::chrono::milliseconds(200));
             }
-
-            if (abortOutput_ && output_queue_.empty()) return;
-
-            item = output_queue_.front();
-            output_queue_.pop();
+            if (abortOutput_ && !found) return;
         }
-        
+
         if (output_ready_callback_)
             output_ready_callback_(item.mem, item.bytes_used, item.timestamp_us, item.cookie);
     }
@@ -354,6 +371,7 @@ void MjpegEncoder::encodeJPEG(struct jpeg_compress_struct &cinfo, EncodeItem &it
 
     jpeg_set_defaults(&cinfo);
     cinfo.raw_data_in = TRUE;
+    // SW modunda kaliteyi 50'de tutabiliriz veya artırabiliriz
     jpeg_set_quality(&cinfo, 50, TRUE);
 
     jpeg_mem_len_t jpeg_mem_len = buffer_len;
@@ -433,7 +451,7 @@ void MjpegEncoder::encodeThread(int num)
 
 void MjpegEncoder::outputThread()
 {
-    OutputItem item = {}; // <-- DÜZELTİLDİ: Başlatılmamış değişken hatasını önler
+    OutputItem item = {}; // Başlatılmamış değişken düzeltmesi
     while (true)
     {
         {
