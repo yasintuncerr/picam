@@ -144,7 +144,7 @@ static void *client_thread_func(void *arg) {
 
             exposure_us = parse_exposure_from_request(request_buf);
             if (exposure_us > 0) {
-                fprintf(stdout, "HTTP capture: Manual exposure time requested: %ld us\n", exposure_us);
+                fprintf(stdout, "HTTP capture: Manual exposure time requested: %lld us\n", exposure_us);
             }
 
             gain = parse_gain_from_request(request_buf);
