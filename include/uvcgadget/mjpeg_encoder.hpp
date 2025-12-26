@@ -6,15 +6,21 @@
  */
 
 #pragma once
-
+#include <atomic>
 #include <condition_variable>
 #include <mutex>
 #include <queue>
 #include <thread>
-#include <functional>
+#include <vector>
 
-struct jpeg_compress_struct;
-typedef std::function<void(void *, size_t, int64_t, unsigned int)> OutputReadyCallback;
+#include <libcamera/libcamera.h>
+
+#ifndef ENABLE_HW_MJPEG
+#include <jpeglib.h>
+#else
+#include <linux/videodev2.h>
+#endif
+
 
 struct StreamInfo
 {
@@ -26,6 +32,8 @@ struct StreamInfo
 	std::optional<libcamera::ColorSpace> colour_space;
 };
 
+typedef void(*OutputReadyCallback)(void *mem, size_t bytes_used, int64_t timestamp_us, unsigned int cookie);
+
 class MjpegEncoder
 {
 public:
@@ -34,56 +42,73 @@ public:
 
 	void EncodeBuffer(void *mem, void *dest, unsigned int size,
 			  StreamInfo const &info, int64_t timestamp_us,
-			  unsigned int cookie);
+			  unsigned int cookie, int fd);
 	StreamInfo getStreamInfo(libcamera::Stream *stream);
-	void SetOutputReadyCallback(OutputReadyCallback callback) { output_ready_callback_ = callback; }
 
 private:
-	static const int NUM_ENC_THREADS = 4;
-
-	void encodeThread(int num);
-
-	/*
-	 * Handle the output buffers in another thread so as not to block the
-	 * encoders. The application can take its time, after which we return
-	 * this buffer to the encoder for re-use.
-	 */
-	void outputThread();
-
-	bool abortEncode_;
-	bool abortOutput_;
-	uint64_t index_;
-
-	struct EncodeItem
-	{
+	struct EncodeItem {
 		void *mem;
 		void *dest;
 		unsigned int size;
 		StreamInfo info;
 		int64_t timestamp_us;
-		uint64_t index;
 		unsigned int cookie;
+		int fd;
 	};
 
-	std::queue<EncodeItem> encode_queue_;
-	std::mutex encode_mutex_;
-	std::condition_variable encode_cond_var_;
-	std::thread encode_thread_[NUM_ENC_THREADS];
-	void encodeJPEG(struct jpeg_compress_struct &cinfo, EncodeItem &item,
-			uint8_t *&encoded_buffer, size_t &buffer_len);
-
-	struct OutputItem
-	{
+	struct OutputItem {
 		void *mem;
 		size_t bytes_used;
 		int64_t timestamp_us;
-		uint64_t index;
 		unsigned int cookie;
-	};
+		unsigned int index;
+	}
 
-	std::queue<OutputItem> output_queue_[NUM_ENC_THREADS];
+	void encodeThread(int num);
+	void outputThread();
+
+	OutputReadyCallback output_ready_callback_;
+
+	std::mutex encode_mutex_;
+	std::condition_variable encode_cond_var_;
+	std::queue<EncodeItem> encode_queue_;
+
+	std::mutex output_mutex_;
+	std::condition_variable encode_cond_var_;
+	std::queue<EncodeItem> encode_queue_;
+
 	std::mutex output_mutex_;
 	std::condition_variable output_cond_var_;
+
+
+#ifdef ENABLE_HW_MJPEG
+	std::queue<OutputItem> output_queue_;
+	std::thread encode_thread_;
+#else
+	static const int NUM_ENC_THREADS = 4;
+	std::thread encode_thread_[NUM_ENC_THREADS];
+	std::queue<OutputItem> output_queue_[NUM_ENC_THREADS];	
+#endif
+
 	std::thread output_thread_;
-	OutputReadyCallback output_ready_callback_ ;
+	std::atomic<bool> abortEncode_;
+	std::atomic<bool> abortOutput_;
+	unsigned int index_;
+
+#ifdef ENABLE_HW_MJPEG
+	// --- Hardware Specific Members ---
+	int fd_m2m_;
+	bool hw_initialized_;
+	struct v4l2_buffer *cap_buffers_;
+	void **cap_mem_;
+	int cap_buf_cnt_;
+
+	int hw_init(const StreamInfo &info);
+	void hw_uninit();
+	int hw_process(EncodeItem &item, size_t &bytes_used);
+#else
+	// --- Software Specific Members ---
+	void encodeJPEG(struct jpeg_compress_struct &cinfo, EncodeItem &item,
+			uint8_t *&encoded_buffer, size_t &buffer_len);
+#endif
 };
