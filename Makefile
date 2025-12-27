@@ -25,10 +25,15 @@ asan: ## Reconfigure with the address sanitizer enabled
 asan: ASAN="-Db_sanitize=address,undefined"
 asan: reconfigure
 
+hw: ## Reconfigure with hardware MJPEG encoder enabled(/dev/video11)
+hw: HW_ARGS="-Dhw_mjpeg=true"
+hw: reconfigure
+
+
 configure: ## Configure the build
 $(BUILDDIR)/build.ninja reconfigure configure:
 	meson $(BUILDDIR) \
-		$(RECONFIGURE) $(ASAN) \
+		$(RECONFIGURE) $(ASAN) $(HW_ARGS) \
 		-Dprefix=/usr
 
 picam: ## Build the picam library and application

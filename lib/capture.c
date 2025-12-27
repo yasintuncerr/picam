@@ -101,7 +101,7 @@ static void still_capture_ready_cb(void *data, struct still_buffer *buffer_from_
             session->captured_data.timestamp = buffer_from_camera->timestamp;
             session->captured_data.error = false;
         } else {
-            fprintf(stderr, "İstemci DNG arabelleği için bellek ayrılamadı\n");
+            fprintf(stderr, "Failed to allocate memory for client DNG buffer\n");
         }
     }
 
@@ -110,7 +110,6 @@ static void still_capture_ready_cb(void *data, struct still_buffer *buffer_from_
     pthread_mutex_unlock(&session->mtx);
 }
 
-// Thread to handle a client.
 static void *client_thread_func(void *arg) {
     struct http_client_session *session = (struct http_client_session *)arg;
     char request_buf[2048] = {0};
@@ -118,18 +117,9 @@ static void *client_thread_func(void *arg) {
     if (read(session->fd, request_buf, sizeof(request_buf) - 1) <= 0) {
         goto cleanup;
     }
-    if (strstr(request_buf, "OPTIONS") == request_buf) {
-        const char *response = 
-            "HTTP/1.1 204 No Content\r\n"
-            "Access-Control-Allow-Origin: *\r\n"
-            "Access-Control-Allow-Methods: GET, OPTIONS\r\n"
-            "Access-Control-Allow-Headers: *\r\n"
-            "Access-Control-Max-Age: 86400\r\n"
-            "\r\n";
-        write(session->fd, response, strlen(response));
-        goto cleanup;
-    }
-
+    
+    // OPTIONS isteğini kaldır - nginx halledecek
+    
     if (strstr(request_buf, "GET /capture") == request_buf) {
         if (!session->server->still_src) {
             const char *response = "HTTP/1.1 503 Service Unavailable\r\n"
@@ -144,16 +134,13 @@ static void *client_thread_func(void *arg) {
 
             exposure_us = parse_exposure_from_request(request_buf);
             if (exposure_us > 0) {
-                fprintf(stdout, "HTTP capture: Manual exposure time requested: %ld us\n", exposure_us);
+                fprintf(stdout, "HTTP capture: Manual exposure time requested: %lld us\n", exposure_us);
             }
 
             gain = parse_gain_from_request(request_buf);
-
             if (gain > 0) {
                 fprintf(stdout, "HTTP capture: Manual gain requested: %.2f\n", gain);
             }
-
-
 
             libcamera_still_source_set_callback(session->server->still_src, still_capture_ready_cb, session);
 
@@ -172,9 +159,6 @@ static void *client_thread_func(void *arg) {
                               "HTTP/1.1 200 OK\r\n"
                               "Content-Type: image/dng\r\n"
                               "Content-Disposition: attachment; filename=\"capture.dng\"\r\n"
-                              "Access-Control-Allow-Origin: *\r\n"           
-                              "Access-Control-Allow-Methods: GET, OPTIONS\r\n"  
-                              "Access-Control-Allow-Headers: *\r\n"
                               "Content-Length: %u\r\n\r\n",
                               session->captured_data.bytesused);
 

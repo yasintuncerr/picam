@@ -57,14 +57,10 @@ struct libcamera_source {
 	std::unique_ptr<CameraConfiguration> config;
 	std::shared_ptr<Camera> camera;
 	ControlList controls;
-	
 	bool video_prev_ae_enabled_ = true;
 	int64_t video_prev_exposure_ = 0;
 	float video_prev_gain_ = 1.0f;
 	bool video_restore_needed_ = false;
-
-
-
 	int pfds[2];
 	
 	/* Video Stream resources */
@@ -335,7 +331,8 @@ static void libcamera_source_video_process(libcamera_source *src)
 		void *dest = src->video.buffers.buffers[request->cookie()].mem;
 		unsigned int size = span->second.size();
 
-		src->video.encoder->EncodeBuffer(mem, dest, size, info, timestamp_ns / 1000, request->cookie());
+		int fd = framebuf->planes()[0].fd.get();
+		src->video.encoder->EncodeBuffer(mem, dest, size, info, timestamp_ns / 1000, request->cookie(), fd);
 
 		return;
 	}

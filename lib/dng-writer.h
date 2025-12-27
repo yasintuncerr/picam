@@ -64,7 +64,7 @@ public:
   	
 private:
     DngReadyCallback dngReadyCallback_;
-    
+    std::vector<uint8_t> scanlineBuffer_;
 	int writeInternal(TIFF *tif, const libcamera::Camera *camera,
                       const libcamera::StreamConfiguration &config,
                       const libcamera::ControlList &metadata,
