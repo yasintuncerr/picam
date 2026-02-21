@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PiCam — Camera Controls</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0c0e14;
+    --card: rgba(255,255,255,0.04);
+    --card-border: rgba(255,255,255,0.08);
+    --accent: #6c8cff;
+    --accent-glow: rgba(108,140,255,0.25);
+    --danger: #ff5c6c;
+    --danger-glow: rgba(255,92,108,0.25);
+    --success: #3ddc84;
+    --success-glow: rgba(61,220,132,0.25);
+    --warn: #ffb345;
+    --text: #e4e7ef;
+    --text-dim: #7a8299;
+    --text-bright: #ffffff;
+    --slider-track: rgba(255,255,255,0.08);
+    --radius: 14px;
+    --transition: 0.2s cubic-bezier(.4,0,.2,1);
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    line-height: 1.5;
+  }
+
+  /* ── Layout ── */
+  .app {
+    display: flex;
+    flex-direction: row;
+    max-width: 1200px;
+    margin: 0 auto;
+    min-height: 100vh;
+    gap: 0;
+  }
+
+  /* ── Video Panel ── */
+  .video-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    position: relative;
+    background: #000;
+    min-height: 400px;
+  }
+  .video-panel video {
+    width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    border-radius: 4px;
+  }
+  .video-overlay {
+    position: absolute;
+    top: 12px; left: 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(0,0,0,0.6);
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 0.7rem;
+    font-weight: 500;
+    backdrop-filter: blur(8px);
+    z-index: 2;
+  }
+  .video-overlay .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--danger);
+    animation: blink 1.2s infinite;
+  }
+  .video-overlay .dot.connected { background: var(--success); animation: none; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  .no-video {
+    color: var(--text-dim);
+    text-align: center;
+    padding: 40px;
+  }
+  .no-video svg { margin-bottom: 12px; opacity: 0.3; }
+  .no-video p { font-size: 0.85rem; }
+  .no-video small { font-size: 0.7rem; display: block; margin-top: 6px; color: var(--text-dim); }
+
+  /* ── Controls Panel ── */
+  .controls-panel {
+    width: 380px;
+    overflow-y: auto;
+    padding: 20px 16px;
+    border-left: 1px solid var(--card-border);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--card-border);
+  }
+  .panel-header h1 {
+    font-size: 1.1rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--accent), #a78bfa);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  /* ── Status ── */
+  .conn-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.7rem;
+    padding: 4px 10px;
+    border-radius: 20px;
+    background: var(--card);
+    border: 1px solid var(--card-border);
+  }
+  .conn-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--text-dim);
+  }
+  .conn-status.ok .conn-dot { background: var(--success); box-shadow: 0 0 6px var(--success-glow); }
+  .conn-status.error .conn-dot { background: var(--danger); }
+  .conn-status.loading .conn-dot { background: var(--warn); animation: pulse 0.8s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  /* ── Card ── */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius);
+    padding: 14px;
+    transition: var(--transition);
+  }
+  .card:hover { border-color: rgba(255,255,255,0.12); }
+  .card-title {
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    margin-bottom: 10px;
+  }
+
+  /* ── Controls ── */
+  .control-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .control-row:last-child { margin-bottom: 0; }
+  .control-label {
+    font-size: 0.8rem;
+    font-weight: 500;
+    min-width: 75px;
+  }
+  .control-label small {
+    display: block;
+    font-weight: 400;
+    font-size: 0.65rem;
+    color: var(--text-dim);
+  }
+  .control-value {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--accent);
+    min-width: 40px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ── Slider ── */
+  .slider-wrap { flex: 1; margin: 0 10px; }
+  input[type=range] {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 5px;
+    border-radius: 3px;
+    background: var(--slider-track);
+    outline: none;
+    cursor: pointer;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent-glow);
+    cursor: pointer;
+    transition: transform 0.15s;
+  }
+  input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.15); }
+
+  /* ── Number input ── */
+  input[type=number] {
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: 8px;
+    padding: 6px 8px;
+    color: var(--text);
+    font-size: 0.8rem;
+    font-family: 'Inter', monospace;
+    width: 90px;
+    outline: none;
+    text-align: right;
+    transition: var(--transition);
+  }
+  input[type=number]:focus { border-color: var(--accent); }
+
+  /* ── Select ── */
+  select {
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: 8px;
+    padding: 6px 28px 6px 10px;
+    color: var(--text);
+    font-size: 0.8rem;
+    font-family: 'Inter', sans-serif;
+    outline: none;
+    cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237a8299' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+  }
+  select:focus { border-color: var(--accent); }
+  select option { background: #1a1d28; color: var(--text); }
+
+  /* ── Toggle ── */
+  .toggle-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.7rem;
+    color: var(--text-dim);
+  }
+  .toggle {
+    position: relative;
+    width: 38px; height: 22px;
+    cursor: pointer;
+  }
+  .toggle input { display: none; }
+  .toggle-track {
+    position: absolute;
+    inset: 0;
+    border-radius: 11px;
+    background: var(--slider-track);
+    transition: var(--transition);
+  }
+  .toggle-thumb {
+    position: absolute;
+    top: 3px; left: 3px;
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: var(--text-dim);
+    transition: var(--transition);
+  }
+  .toggle input:checked ~ .toggle-track { background: var(--accent); }
+  .toggle input:checked ~ .toggle-thumb { left: 19px; background: var(--text-bright); }
+
+  /* ── Manual gains ── */
+  .manual-gains {
+    display: none;
+    gap: 8px;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--card-border);
+  }
+  .manual-gains.show { display: flex; }
+  .manual-gains .gain-field { flex: 1; }
+  .manual-gains label {
+    font-size: 0.65rem;
+    color: var(--text-dim);
+    margin-bottom: 3px;
+    display: block;
+  }
+
+  /* ── Buttons ── */
+  .btn-row {
+    display: flex;
+    gap: 8px;
+  }
+  .btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 11px 12px;
+    border-radius: 10px;
+    border: 1px solid transparent;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition);
+  }
+  .btn:active { transform: scale(0.97); }
+
+  .btn-capture {
+    background: linear-gradient(135deg, var(--success), #22c55e);
+    color: #0c0e14;
+    box-shadow: 0 3px 16px var(--success-glow);
+  }
+  .btn-capture:hover { box-shadow: 0 3px 24px rgba(61,220,132,0.4); }
+
+  .btn-reset {
+    background: transparent;
+    border: 1px solid var(--danger);
+    color: var(--danger);
+  }
+  .btn-reset:hover { background: rgba(255,92,108,0.1); }
+
+  .btn-secondary {
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    color: var(--text);
+    font-size: 0.72rem;
+  }
+  .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ── Live indicator ── */
+  .live-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.6rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--accent);
+    margin-left: 4px;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .live-badge.active { opacity: 1; }
+
+  /* ── Toast ── */
+  .toast-container {
+    position: fixed;
+    bottom: 20px; left: 50%;
+    transform: translateX(-50%);
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    pointer-events: none;
+  }
+  .toast {
+    background: rgba(30,33,45,0.95);
+    border: 1px solid var(--card-border);
+    border-radius: 10px;
+    padding: 8px 16px;
+    font-size: 0.75rem;
+    backdrop-filter: blur(12px);
+    animation: toastIn 0.3s ease-out, toastOut 0.3s 2.2s ease-in forwards;
+    pointer-events: auto;
+  }
+  .toast.success { border-color: var(--success); color: var(--success); }
+  .toast.error { border-color: var(--danger); color: var(--danger); }
+  .toast.info { border-color: var(--accent); color: var(--accent); }
+  @keyframes toastIn { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+  @keyframes toastOut { from { opacity:1; } to { opacity:0; } }
+
+  /* ── Auto apply flash ── */
+  .card.flash { border-color: var(--accent); }
+
+  /* ── Responsive ── */
+  @media (max-width: 768px) {
+    .app { flex-direction: column; }
+    .video-panel { min-height: 280px; }
+    .controls-panel {
+      width: 100%;
+      border-left: none;
+      border-top: 1px solid var(--card-border);
+      max-height: 50vh;
+    }
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ═══ Video Panel ═══ -->
+  <div class="video-panel">
+    <div class="video-overlay">
+      <span class="dot" id="liveDot"></span>
+      <span id="liveLabel">UVC Bağlanıyor…</span>
+    </div>
+
+    <video id="videoPreview" autoplay playsinline muted></video>
+
+    <div class="no-video" id="noVideoMsg">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+      <p>UVC Kamera Bekleniyor</p>
+      <small>Tarayıcı kamera erişim izni isteyecek</small>
+    </div>
+  </div>
+
+  <!-- ═══ Controls Panel ═══ -->
+  <div class="controls-panel">
+
+    <div class="panel-header">
+      <h1>⚙️ PiCam Controls</h1>
+      <div class="conn-status" id="connStatus">
+        <span class="conn-dot"></span>
+        <span id="connLabel">…</span>
+      </div>
+    </div>
+
+    <!-- ─── Exposure ─── -->
+    <div class="card" id="cardExposure">
+      <div class="card-title">📷 Pozlama</div>
+
+      <div class="control-row">
+        <span class="control-label">Mod</span>
+        <div class="toggle-wrap">
+          <span>Auto</span>
+          <label class="toggle">
+            <input type="checkbox" id="exposureManual">
+            <span class="toggle-track"></span>
+            <span class="toggle-thumb"></span>
+          </label>
+          <span>Manuel</span>
+        </div>
+      </div>
+
+      <div class="control-row" id="exposureRow" style="opacity:0.35; pointer-events:none">
+        <span class="control-label">Süre <small>µs</small></span>
+        <input type="number" id="exposureValue" value="10000" min="100" max="5000000" step="100">
+      </div>
+
+      <div class="control-row">
+        <span class="control-label">Gain</span>
+        <div class="slider-wrap">
+          <input type="range" id="gainSlider" min="0" max="16" step="0.1" value="0">
+        </div>
+        <span class="control-value" id="gainDisplay">Auto</span>
+      </div>
+    </div>
+
+    <!-- ─── AWB ─── -->
+    <div class="card" id="cardAwb">
+      <div class="card-title">☀️ Beyaz Denge</div>
+
+      <div class="control-row">
+        <span class="control-label">AWB</span>
+        <select id="awbMode">
+          <option value="auto" selected>Auto</option>
+          <option value="incandescent">Incandescent</option>
+          <option value="tungsten">Tungsten</option>
+          <option value="fluorescent">Fluorescent</option>
+          <option value="indoor">Indoor</option>
+          <option value="daylight">Daylight</option>
+          <option value="cloudy">Cloudy</option>
+          <option value="custom">Custom</option>
+          <option value="manual">Manual</option>
+        </select>
+      </div>
+
+      <div class="manual-gains" id="manualGains">
+        <div class="gain-field">
+          <label>Kırmızı (R)</label>
+          <input type="number" id="colourGainR" value="2.0" min="0.1" max="8.0" step="0.1" style="width:100%">
+        </div>
+        <div class="gain-field">
+          <label>Mavi (B)</label>
+          <input type="number" id="colourGainB" value="1.8" min="0.1" max="8.0" step="0.1" style="width:100%">
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── Image Quality ─── -->
+    <div class="card" id="cardQuality">
+      <div class="card-title">
+        🎨 Görüntü Kalitesi
+        <span class="live-badge" id="liveBadge">● LIVE</span>
+      </div>
+
+      <div class="control-row">
+        <span class="control-label">Brightness</span>
+        <div class="slider-wrap">
+          <input type="range" id="brightness" min="-100" max="100" value="0">
+        </div>
+        <span class="control-value" id="brightnessDisplay">0</span>
+      </div>
+
+      <div class="control-row">
+        <span class="control-label">Contrast</span>
+        <div class="slider-wrap">
+          <input type="range" id="contrast" min="0" max="100" value="50">
+        </div>
+        <span class="control-value" id="contrastDisplay">50</span>
+      </div>
+
+      <div class="control-row">
+        <span class="control-label">Saturation</span>
+        <div class="slider-wrap">
+          <input type="range" id="saturation" min="0" max="100" value="50">
+        </div>
+        <span class="control-value" id="saturationDisplay">50</span>
+      </div>
+
+      <div class="control-row">
+        <span class="control-label">Sharpness</span>
+        <div class="slider-wrap">
+          <input type="range" id="sharpness" min="0" max="100" value="50">
+        </div>
+        <span class="control-value" id="sharpnessDisplay">50</span>
+      </div>
+    </div>
+
+    <!-- ─── Actions ─── -->
+    <div class="btn-row">
+      <button class="btn btn-capture" onclick="captureStill()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/></svg>
+        DNG Capture
+      </button>
+      <button class="btn btn-reset" onclick="resetControls()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+        Sıfırla
+      </button>
+    </div>
+
+    <!-- ─── Presets ─── -->
+    <div class="card">
+      <div class="card-title">⚡ Hazır Ayarlar</div>
+      <div class="btn-row" style="flex-wrap:wrap">
+        <button class="btn btn-secondary" onclick="applyPreset('microscope')">🔬 Mikro</button>
+        <button class="btn btn-secondary" onclick="applyPreset('bright')">☀️ Parlak</button>
+        <button class="btn btn-secondary" onclick="applyPreset('low_light')">🌙 Gece</button>
+        <button class="btn btn-secondary" onclick="applyPreset('neutral')">⚖️ Nötr</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+/* ═══════════════════════════════════════════════════
+ *  CONFIG
+ * ═══════════════════════════════════════════════════ */
+/*
+ * Served via nginx → relative URLs (no CORS needed).
+ * Opened as file:// → direct to Pi HTTP server.
+ * Change to https://192.168.7.2 after setting up nginx + SSL.
+ */
+const BASE_URL = (window.location.protocol === 'file:')
+  ? 'http://192.168.7.2:8080'
+  : '';
+
+const DEBOUNCE_MS = 300;   // slider debounce for auto-apply
+
+const $ = id => document.getElementById(id);
+
+/* ═══════════════════════════════════════════════════
+ *  UVC VIDEO PREVIEW (getUserMedia)
+ * ═══════════════════════════════════════════════════ */
+async function initVideo() {
+  const video  = $('videoPreview');
+  const noMsg  = $('noVideoMsg');
+  const dot    = $('liveDot');
+  const label  = $('liveLabel');
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 1920 }, height: { ideal: 1080 } },
+      audio: false
+    });
+    video.srcObject = stream;
+    video.style.display = 'block';
+    noMsg.style.display = 'none';
+    dot.classList.add('connected');
+    label.textContent = 'LIVE';
+  } catch (err) {
+    console.warn('UVC erişimi başarısız:', err);
+    video.style.display = 'none';
+    noMsg.style.display = 'block';
+    label.textContent = 'Kamera bulunamadı';
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+ *  CONNECTION CHECK
+ * ═══════════════════════════════════════════════════ */
+let connOk = false;
+
+async function checkConnection() {
+  const el = $('connStatus');
+  const lb = $('connLabel');
+
+  /* If served from nginx, the server is already reachable */
+  if (window.location.protocol === 'https:' || window.location.protocol === 'http:') {
+    /* Quick fetch to verify picam backend is running behind nginx */
+    try {
+      el.className = 'conn-status loading';
+      lb.textContent = 'Checking…';
+      const ctrl = new AbortController();
+      const tId = setTimeout(() => ctrl.abort(), 5000);
+      const res = await fetch(`${BASE_URL}/video_controls?awb=auto`, { signal: ctrl.signal });
+      clearTimeout(tId);
+      connOk = true;
+      el.className = 'conn-status ok';
+      lb.textContent = 'Connected';
+    } catch (err) {
+      console.warn('Backend check failed:', err);
+      connOk = false;
+      el.className = 'conn-status error';
+      lb.textContent = 'Backend offline';
+    }
+    return;
+  }
+
+  /* file:// mode — direct HTTPS to Pi */
+  try {
+    el.className = 'conn-status loading';
+    lb.textContent = 'Checking…';
+    const ctrl = new AbortController();
+    const tId = setTimeout(() => ctrl.abort(), 5000);
+    const res = await fetch(`${BASE_URL}/video_controls?awb=auto`, { signal: ctrl.signal });
+    clearTimeout(tId);
+    connOk = true;
+    el.className = 'conn-status ok';
+    lb.textContent = 'Connected';
+  } catch (err) {
+    console.warn('Connection check failed:', err);
+    connOk = false;
+    el.className = 'conn-status error';
+    lb.textContent = 'No connection';
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+ *  BUILD QUERY PARAMS
+ * ═══════════════════════════════════════════════════ */
+function buildParams() {
+  const p = new URLSearchParams();
+
+  if ($('exposureManual').checked) {
+    const us = parseInt($('exposureValue').value) || 0;
+    if (us > 0) p.set('exposure', us);
+  }
+
+  const gain = parseFloat($('gainSlider').value);
+  if (gain > 0) p.set('gain', gain);
+
+  const awb = $('awbMode').value;
+  p.set('awb', awb);
+  if (awb === 'manual') {
+    p.set('colour_gain_r', parseFloat($('colourGainR').value) || 2.0);
+    p.set('colour_gain_b', parseFloat($('colourGainB').value) || 1.8);
+  }
+
+  const br = parseInt($('brightness').value);
+  p.set('brightness', br);
+
+  const ct = parseInt($('contrast').value);
+  p.set('contrast', ct);
+
+  const sa = parseInt($('saturation').value);
+  p.set('saturation', sa);
+
+  const sh = parseInt($('sharpness').value);
+  p.set('sharpness', sh);
+
+  return p.toString();
+}
+
+/* ═══════════════════════════════════════════════════
+ *  AUTO-APPLY VIDEO CONTROLS (debounced)
+ * ═══════════════════════════════════════════════════ */
+let applyTimer = null;
+let applyInFlight = false;
+
+function scheduleApply() {
+  $('liveBadge').classList.add('active');
+  clearTimeout(applyTimer);
+  applyTimer = setTimeout(() => applyVideoControls(true), DEBOUNCE_MS);
+}
+
+async function applyVideoControls(silent = false) {
+  if (applyInFlight) return;
+  applyInFlight = true;
+
+  const params = buildParams();
+  const url = `${BASE_URL}/video_controls?${params}`;
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`${res.status}`);
+    if (!silent) toast('Video kontrolleri güncellendi', 'success');
+
+    // Flash the card
+    const card = $('cardQuality');
+    card.classList.add('flash');
+    setTimeout(() => card.classList.remove('flash'), 400);
+  } catch (err) {
+    if (!silent) toast('Hata: ' + err.message, 'error');
+  } finally {
+    applyInFlight = false;
+    setTimeout(() => $('liveBadge').classList.remove('active'), 1500);
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+ *  CAPTURE STILL
+ * ═══════════════════════════════════════════════════ */
+async function captureStill() {
+  toast('Capture başlatılıyor…', 'info');
+  const params = buildParams();
+  const url = `${BASE_URL}/capture?${params}`;
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    const blob = await res.blob();
+    if (blob.size > 0) {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `capture_${Date.now()}.dng`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast(`DNG indirildi (${(blob.size/1024/1024).toFixed(1)} MB)`, 'success');
+    }
+  } catch (err) {
+    toast('Capture hatası: ' + err.message, 'error');
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+ *  RESET CONTROLS
+ * ═══════════════════════════════════════════════════ */
+async function resetControls() {
+  try {
+    const res = await fetch(`${BASE_URL}/reset_controls`);
+    if (!res.ok) throw new Error(`${res.status}`);
+    resetUI();
+    toast('Kontroller sıfırlandı ✓', 'success');
+  } catch (err) {
+    toast('Reset hatası: ' + err.message, 'error');
+  }
+}
+
+function resetUI() {
+  $('exposureManual').checked = false;
+  $('exposureValue').value = 10000;
+  $('gainSlider').value = 0;
+  $('awbMode').value = 'auto';
+  $('colourGainR').value = 2.0;
+  $('colourGainB').value = 1.8;
+  $('brightness').value = 0;
+  $('contrast').value = 50;
+  $('saturation').value = 50;
+  $('sharpness').value = 50;
+  updateAllDisplays();
+}
+
+/* ═══════════════════════════════════════════════════
+ *  PRESETS
+ * ═══════════════════════════════════════════════════ */
+function applyPreset(name) {
+  const presets = {
+    microscope: { exp:true, exp_us:50000, gain:4, awb:'manual', cgr:2.2, cgb:1.6, br:10, ct:60, sa:55, sh:70 },
+    bright:     { exp:false, gain:0, awb:'daylight', br:20, ct:55, sa:60, sh:50 },
+    low_light:  { exp:true, exp_us:200000, gain:8, awb:'auto', br:15, ct:40, sa:40, sh:30 },
+    neutral:    { exp:false, gain:0, awb:'auto', br:0, ct:50, sa:50, sh:50 },
+  };
+  const p = presets[name];
+  if (!p) return;
+
+  $('exposureManual').checked = !!p.exp;
+  if (p.exp_us) $('exposureValue').value = p.exp_us;
+  $('gainSlider').value = p.gain || 0;
+  $('awbMode').value = p.awb || 'auto';
+  if (p.cgr) $('colourGainR').value = p.cgr;
+  if (p.cgb) $('colourGainB').value = p.cgb;
+  $('brightness').value = p.br ?? 0;
+  $('contrast').value = p.ct ?? 50;
+  $('saturation').value = p.sa ?? 50;
+  $('sharpness').value = p.sh ?? 50;
+
+  updateAllDisplays();
+  scheduleApply();
+  toast(`Preset: ${name}`, 'info');
+}
+
+/* ═══════════════════════════════════════════════════
+ *  UI HELPERS
+ * ═══════════════════════════════════════════════════ */
+function updateAllDisplays() {
+  toggleExposureRow();
+  toggleManualGains();
+  const g = parseFloat($('gainSlider').value);
+  $('gainDisplay').textContent = g > 0 ? g.toFixed(1) : 'Auto';
+  $('brightnessDisplay').textContent = $('brightness').value;
+  $('contrastDisplay').textContent   = $('contrast').value;
+  $('saturationDisplay').textContent = $('saturation').value;
+  $('sharpnessDisplay').textContent  = $('sharpness').value;
+}
+
+function toggleExposureRow() {
+  const on = $('exposureManual').checked;
+  $('exposureRow').style.opacity = on ? '1' : '0.35';
+  $('exposureRow').style.pointerEvents = on ? 'auto' : 'none';
+}
+
+function toggleManualGains() {
+  $('manualGains').classList.toggle('show', $('awbMode').value === 'manual');
+}
+
+function toast(msg, type='success') {
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  $('toastContainer').appendChild(el);
+  setTimeout(() => el.remove(), 2800);
+}
+
+/* ═══════════════════════════════════════════════════
+ *  EVENT LISTENERS — all auto-apply on change
+ * ═══════════════════════════════════════════════════ */
+// Sliders → auto-apply
+['brightness','contrast','saturation','sharpness'].forEach(id => {
+  $(id).addEventListener('input', () => {
+    $(id + 'Display').textContent = $(id).value;
+    scheduleApply();
+  });
+});
+
+$('gainSlider').addEventListener('input', () => {
+  const v = parseFloat($('gainSlider').value);
+  $('gainDisplay').textContent = v > 0 ? v.toFixed(1) : 'Auto';
+  scheduleApply();
+});
+
+// Exposure toggle & value → auto-apply
+$('exposureManual').addEventListener('change', () => {
+  toggleExposureRow();
+  scheduleApply();
+});
+$('exposureValue').addEventListener('change', scheduleApply);
+
+// AWB → auto-apply
+$('awbMode').addEventListener('change', () => {
+  toggleManualGains();
+  scheduleApply();
+});
+$('colourGainR').addEventListener('change', scheduleApply);
+$('colourGainB').addEventListener('change', scheduleApply);
+
+/* ═══════════════════════════════════════════════════
+ *  INIT
+ * ═══════════════════════════════════════════════════ */
+updateAllDisplays();
+initVideo();
+checkConnection();
+setInterval(checkConnection, 15000);
+</script>
+
+</body>
+</html>
