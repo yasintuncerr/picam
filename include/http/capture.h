@@ -11,7 +11,8 @@
 
 #include <pthread.h>
 #include <stdbool.h>
-#include "still-source.h" // Assumes still_buffer is defined here
+#include "still-source.h"
+#include "capture_controls.h"
 
 // Forward declarations
 struct http_server;
@@ -35,6 +36,7 @@ struct http_client_session {
  */
 struct http_server {
     int listen_fd;
+    struct video_source *video_src;   /* video source for video_controls/reset endpoints */
     struct still_source *still_src;
     pthread_t server_thread;
     volatile bool running;
