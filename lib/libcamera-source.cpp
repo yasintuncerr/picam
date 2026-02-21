@@ -34,6 +34,10 @@ extern "C" {
 #include "video-source.h"
 #include "capture_controls.h"
 }
+
+/* Prevent C macros from tools.h clashing with std::min / std::max */
+#undef min
+#undef max
 #include "dng-writer.h"
 
 
@@ -244,7 +248,7 @@ static void apply_capture_controls(libcamera::Request        *req,
             std::array<float, 2> gains = { cc->colour_gain_r,
                                            cc->colour_gain_b };
             ctrls.set(controls::ColourGains,
-                      Span<const float>(gains.data(), gains.size()));
+                      Span<const float, 2>({ gains[0], gains[1] }));
         }
         break;
     case AWB_INCANDESCENT:
@@ -1095,7 +1099,7 @@ extern "C" int libcamera_apply_video_controls(struct video_source *s,
 		if (cc->colour_gain_r > 0.0f && cc->colour_gain_b > 0.0f) {
 			std::array<float, 2> gains = { cc->colour_gain_r, cc->colour_gain_b };
 			src->controls.set(controls::ColourGains,
-			                  Span<const float>(gains.data(), gains.size()));
+			                  Span<const float, 2>({ gains[0], gains[1] }));
 		}
 		break;
 	case AWB_INCANDESCENT:
