@@ -62,6 +62,7 @@ struct libcamera_source {
 	std::unique_ptr<CameraConfiguration> config;
 	std::shared_ptr<Camera> camera;
 	ControlList controls;
+	bool controls_dirty_ = false;
 	bool restore_pending_ = false;
 	ControlList restore_controls_;
 	int pfds[2];
@@ -598,6 +599,14 @@ static int libcamera_source_video_queue_buffer(struct video_source *s,
 					r->controls().set(id, val);
 				}
 				src->restore_pending_ = false;
+			}
+
+			/* Apply pending video controls from HTTP /video_controls */
+			if (src->controls_dirty_) {
+				for (auto const &[id, val] : src->controls) {
+					r->controls().set(id, val);
+				}
+				src->controls_dirty_ = false;
 			}
 
 			src->camera->queueRequest(r.get());
@@ -1155,6 +1164,7 @@ extern "C" int libcamera_apply_video_controls(struct video_source *s,
 	}
 
 	std::cout << "Video controls updated" << std::endl;
+	src->controls_dirty_ = true;
 	return 0;
 }
 
@@ -1173,6 +1183,7 @@ extern "C" int libcamera_reset_controls(struct video_source *s)
 
 	/* Restore state'ini temizle */
 	src->restore_pending_ = false;
+	src->controls_dirty_ = true;
 
 	std::cout << "Controls reset to defaults" << std::endl;
 	return 0;
