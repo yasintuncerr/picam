@@ -446,38 +446,18 @@ function buildCapParams() {
 }
 
 async function capture() {
-  toast('Capture başlatılıyor…', 'i');
+  const ext = fmt === 'jpeg' ? 'jpg' : 'dng';
+  const defaultName = `capture_${new Date().toISOString().replace(/[:.]/g,'-').slice(0,19)}.${ext}`;
+  const name = prompt('Dosya adı:', defaultName);
+  if (!name) { toast('İptal edildi', 'i'); return; }
+
+  toast('Capture…', 'i');
   try {
     const r = await fetch(`${B}/capture?${buildCapParams()}`);
     if (!r.ok) throw new Error(r.statusText);
     const blob = await r.blob();
     if (blob.size === 0) throw new Error('Boş dosya');
 
-    const ext = fmt === 'jpeg' ? 'jpg' : 'dng';
-    const defaultName = `capture_${new Date().toISOString().replace(/[:.]/g,'-').slice(0,19)}.${ext}`;
-
-    // showSaveFilePicker varsa kullan (Chrome/Edge)
-    if (window.showSaveFilePicker) {
-      try {
-        const types = fmt === 'jpeg'
-          ? [{ description: 'JPEG Image', accept: {'image/jpeg': ['.jpg','.jpeg']} }]
-          : [{ description: 'DNG Raw Image', accept: {'image/x-adobe-dng': ['.dng']} }];
-
-        const handle = await window.showSaveFilePicker({ suggestedName: defaultName, types });
-        const writable = await handle.createWritable();
-        await writable.write(blob);
-        await writable.close();
-        toast(`Kaydedildi: ${handle.name} (${(blob.size/1024/1024).toFixed(1)}MB)`, 's');
-        return;
-      } catch (e) {
-        if (e.name === 'AbortError') { toast('İptal edildi', 'i'); return; }
-        // Fallback to download
-      }
-    }
-
-    // Fallback: normal download
-    const name = prompt('Dosya adı:', defaultName);
-    if (!name) { toast('İptal edildi', 'i'); return; }
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = name;
