@@ -285,14 +285,11 @@
         <button class="btn btn-rst" onclick="resetProf()">🔄 Default</button>
       </div>
 
-      <!-- Profiller -->
+      <!-- Kayıtlı Profiller -->
       <div class="card">
-        <div class="card-title">⚡ Profiller</div>
+        <div class="card-title">⚡ Kayıtlı Profiller</div>
         <div class="preset-list" id="pList"></div>
-        <div style="display:flex;gap:5px;margin-top:8px">
-          <input type="text" id="pName" placeholder="Profil adı…">
-          <button class="btn btn-sm btn-sav" onclick="savePre()">+</button>
-        </div>
+        <div id="pEmpty" style="font-size:.68rem;color:var(--text-dim);padding:4px 0">Henüz profil yok</div>
       </div>
     </div>
 
@@ -500,12 +497,32 @@ function resetImg() {
   toast('Görüntü sıfırlandı', 's');
 }
 
-/* ── Profile save/load/reset (server) ── */
+/* ── Profile save (prompt for name → localStorage + server) ── */
 async function saveProf() {
-  try {
-    await fetch(`${B}/capture_controls?${buildCapParams()}`);
-    toast('Profil kaydedildi ✓', 's');
-  } catch(e) { toast('Kayıt hatası', 'e'); }
+  const name = prompt('Profil adı girin:');
+  if (!name || !name.trim()) { toast('İptal edildi', 'i'); return; }
+
+  // localStorage'a kaydet
+  const presets = getPresets();
+  presets.push({
+    name: name.trim(),
+    eM: $('expM').checked,
+    eV: $('expV').value,
+    g: $('sGain').value,
+    f: fmt,
+    q: $('sQua').value,
+    bri: $('sBri').value,
+    con: $('sCon').value,
+    sat: $('sSat').value,
+    sha: $('sSha').value
+  });
+  savePresets(presets);
+  renderPresets();
+
+  // Sunucuya da kaydet
+  try { await fetch(`${B}/capture_controls?${buildCapParams()}`); } catch {}
+
+  toast(`"${name.trim()}" kaydedildi ✓`, 's');
 }
 
 async function resetProf() {
@@ -541,53 +558,72 @@ async function loadProf() {
   } catch(e) { console.warn('loadProf:', e); }
 }
 
-/* ── Local presets (localStorage) ── */
-function getPre() { try { return JSON.parse(localStorage.getItem('pp')||'[]'); } catch { return []; } }
-function setPre(p) { localStorage.setItem('pp', JSON.stringify(p)); }
+/* ── Presets (localStorage) ── */
+const PRESETS_KEY = 'picam_presets_v2';
+function getPresets() { try { return JSON.parse(localStorage.getItem(PRESETS_KEY) || '[]'); } catch { return []; } }
+function savePresets(arr) { localStorage.setItem(PRESETS_KEY, JSON.stringify(arr)); }
 
-function renderPre() {
-  const l = $('pList'), ps = getPre();
-  l.innerHTML = '';
-  ps.forEach((p,i) => {
-    const d = document.createElement('div');
-    d.className = 'pi';
-    d.innerHTML = `<span class="pn" onclick="loadPre(${i})">${p.name}</span><button class="btn-x" onclick="delPre(${i})">✕</button>`;
-    l.appendChild(d);
+function renderPresets() {
+  const list = $('pList');
+  const presets = getPresets();
+  list.innerHTML = '';
+  $('pEmpty').style.display = presets.length === 0 ? 'block' : 'none';
+
+  presets.forEach((p, i) => {
+    const div = document.createElement('div');
+    div.className = 'pi';
+
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'pn';
+    nameSpan.textContent = p.name;
+    nameSpan.onclick = () => loadPreset(i);
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'btn-x';
+    delBtn.textContent = '✕';
+    delBtn.onclick = (e) => { e.stopPropagation(); deletePreset(i); };
+
+    div.appendChild(nameSpan);
+    div.appendChild(delBtn);
+    list.appendChild(div);
   });
 }
 
-function savePre() {
-  const n = $('pName').value.trim();
-  if (!n) { toast('İsim girin', 'e'); return; }
-  const ps = getPre();
-  ps.push({ name:n, eM:$('expM').checked, eV:$('expV').value, g:$('sGain').value, f:fmt, q:$('sQua').value });
-  setPre(ps);
-  renderPre();
-  $('pName').value = '';
-  toast(`"${n}" kaydedildi`, 's');
-}
+function loadPreset(i) {
+  const p = getPresets()[i];
+  if (!p) return;
 
-function loadPre(i) {
-  const p = getPre()[i]; if (!p) return;
+  // Exposure & gain
   $('expM').checked = !!p.eM;
   $('expV').value = p.eV || 20000;
   $('expR').style.opacity = $('expM').checked ? '1' : '.35';
   $('expR').style.pointerEvents = $('expM').checked ? 'auto' : 'none';
   $('sGain').value = p.g || 0;
-  $('dGain').textContent = parseFloat(p.g||0) > 0 ? parseFloat(p.g).toFixed(1) : 'Auto';
+  $('dGain').textContent = parseFloat(p.g || 0) > 0 ? parseFloat(p.g).toFixed(1) : 'Auto';
+
+  // Format
   setFmt(p.f || 'dng');
   $('sQua').value = p.q || 90;
   $('dQua').textContent = p.q || '90';
+
+  // Image processing (if saved)
+  if (p.bri !== undefined) { $('sBri').value = p.bri; $('dBri').textContent = p.bri; }
+  if (p.con !== undefined) { $('sCon').value = p.con; $('dCon').textContent = p.con; }
+  if (p.sat !== undefined) { $('sSat').value = p.sat; $('dSat').textContent = p.sat; }
+  if (p.sha !== undefined) { $('sSha').value = p.sha; $('dSha').textContent = p.sha; }
+
   sched();
   toast(`"${p.name}" yüklendi`, 'i');
 }
 
-function delPre(i) {
-  const ps = getPre(), n = ps[i]?.name;
-  ps.splice(i,1);
-  setPre(ps);
-  renderPre();
-  toast(`"${n}" silindi`, 'i');
+function deletePreset(i) {
+  const presets = getPresets();
+  const name = presets[i]?.name || '?';
+  if (!confirm(`"${name}" profilini silmek istediğinden emin misin?`)) return;
+  presets.splice(i, 1);
+  savePresets(presets);
+  renderPresets();
+  toast(`"${name}" silindi`, 'i');
 }
 
 /* ── Toast ── */
@@ -620,7 +656,7 @@ $('sQua').addEventListener('input', () => { $('dQua').textContent = $('sQua').va
 initVid();
 chkConn();
 loadProf();
-renderPre();
+renderPresets();
 pollStatus();
 setInterval(chkConn, 15000);
 setInterval(pollStatus, 2000);
