@@ -14,7 +14,6 @@
     --accent: #6c8cff;
     --accent-glow: rgba(108,140,255,0.25);
     --danger: #ff5c6c;
-    --danger-glow: rgba(255,92,108,0.25);
     --success: #3ddc84;
     --success-glow: rgba(61,220,132,0.25);
     --warn: #ffb345;
@@ -24,8 +23,6 @@
     --slider-track: rgba(255,255,255,0.08);
     --radius: 14px;
     --transition: 0.2s cubic-bezier(.4,0,.2,1);
-    --tab-active: #6c8cff;
-    --tab-inactive: rgba(255,255,255,0.06);
   }
   * { margin:0; padding:0; box-sizing:border-box; }
   body {
@@ -118,12 +115,6 @@
     line-height: 20px;
     text-align: center;
   }
-  .test-preview .label {
-    font-size: 0.6rem;
-    color: var(--text-dim);
-    text-align: center;
-    margin-top: 4px;
-  }
 
   .no-video {
     color: var(--text-dim);
@@ -132,11 +123,10 @@
   }
   .no-video svg { margin-bottom: 12px; opacity: 0.3; }
   .no-video p { font-size: 0.85rem; }
-  .no-video small { font-size: 0.7rem; display: block; margin-top: 6px; color: var(--text-dim); }
 
   /* ── Controls Panel ── */
   .controls-panel {
-    width: 400px;
+    width: 380px;
     overflow-y: auto;
     border-left: 1px solid var(--card-border);
     display: flex;
@@ -154,6 +144,7 @@
     font-size: 1.05rem;
     font-weight: 700;
     background: linear-gradient(135deg, var(--accent), #a78bfa);
+    background-clip: text;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
   }
@@ -176,8 +167,6 @@
   }
   .conn-status.ok .conn-dot { background: var(--success); box-shadow: 0 0 6px var(--success-glow); }
   .conn-status.error .conn-dot { background: var(--danger); }
-  .conn-status.loading .conn-dot { background: var(--warn); animation: pulse 0.8s infinite; }
-  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
 
   /* ── Tabs ── */
   .tab-bar {
@@ -195,13 +184,13 @@
     font-size: 0.78rem;
     font-weight: 600;
     color: var(--text-dim);
-    background: var(--tab-inactive);
+    background: rgba(255,255,255,0.02);
     border: none;
     cursor: pointer;
     transition: var(--transition);
     border-bottom: 2px solid transparent;
   }
-  .tab-btn:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+  .tab-btn:hover { color: var(--text); }
   .tab-btn.active {
     color: var(--accent);
     background: transparent;
@@ -225,7 +214,6 @@
     padding: 14px;
     transition: var(--transition);
   }
-  .card:hover { border-color: rgba(255,255,255,0.12); }
   .card-title {
     font-size: 0.65rem;
     font-weight: 600;
@@ -263,9 +251,9 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* ── Slider ── */
   .slider-wrap { flex: 1; margin: 0 10px; }
   input[type=range] {
+    appearance: none;
     -webkit-appearance: none;
     width: 100%;
     height: 5px;
@@ -285,7 +273,6 @@
   }
   input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.15); }
 
-  /* ── Number input ── */
   input[type=number] {
     background: var(--card);
     border: 1px solid var(--card-border);
@@ -301,7 +288,6 @@
   }
   input[type=number]:focus { border-color: var(--accent); }
 
-  /* ── Text input ── */
   input[type=text] {
     background: var(--card);
     border: 1px solid var(--card-border);
@@ -315,26 +301,6 @@
     transition: var(--transition);
   }
   input[type=text]:focus { border-color: var(--accent); }
-
-  /* ── Select ── */
-  select {
-    background: var(--card);
-    border: 1px solid var(--card-border);
-    border-radius: 8px;
-    padding: 6px 28px 6px 10px;
-    color: var(--text);
-    font-size: 0.8rem;
-    font-family: 'Inter', sans-serif;
-    outline: none;
-    cursor: pointer;
-    -webkit-appearance: none;
-    appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237a8299' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 8px center;
-  }
-  select:focus { border-color: var(--accent); }
-  select option { background: #1a1d28; color: var(--text); }
 
   /* ── Toggle ── */
   .toggle-wrap {
@@ -396,23 +362,6 @@
     box-shadow: 0 2px 8px var(--accent-glow);
   }
 
-  /* ── Manual gains ── */
-  .manual-gains {
-    display: none;
-    gap: 8px;
-    margin-top: 8px;
-    padding-top: 8px;
-    border-top: 1px solid var(--card-border);
-  }
-  .manual-gains.show { display: flex; }
-  .manual-gains .gain-field { flex: 1; }
-  .manual-gains label {
-    font-size: 0.65rem;
-    color: var(--text-dim);
-    margin-bottom: 3px;
-    display: block;
-  }
-
   /* ── JPEG quality row ── */
   .quality-row {
     display: none;
@@ -455,9 +404,7 @@
   .btn-test {
     background: linear-gradient(135deg, var(--warn), #f59e0b);
     color: #0c0e14;
-    box-shadow: 0 3px 12px rgba(255,179,69,0.25);
   }
-  .btn-test:hover:not(:disabled) { box-shadow: 0 3px 20px rgba(255,179,69,0.4); }
 
   .btn-reset {
     background: transparent;
@@ -472,14 +419,6 @@
     color: var(--accent);
   }
   .btn-save:hover { background: rgba(108,140,255,0.1); }
-
-  .btn-secondary {
-    background: var(--card);
-    border: 1px solid var(--card-border);
-    color: var(--text);
-    font-size: 0.72rem;
-  }
-  .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
 
   .btn-sm {
     padding: 5px 10px;
@@ -502,21 +441,16 @@
   }
   .btn-danger-sm:hover { background: rgba(255,92,108,0.15); }
 
-  /* ── Live indicator ── */
-  .live-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 0.6rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--accent);
-    margin-left: 4px;
-    opacity: 0;
-    transition: opacity 0.3s;
+  /* ── Info box ── */
+  .info-box {
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    background: rgba(108,140,255,0.06);
+    border: 1px solid rgba(108,140,255,0.15);
+    border-radius: 8px;
+    padding: 8px 10px;
+    line-height: 1.4;
   }
-  .live-badge.active { opacity: 1; }
 
   /* ── Toast ── */
   .toast-container {
@@ -546,14 +480,12 @@
   @keyframes toastIn { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
   @keyframes toastOut { from { opacity:1; } to { opacity:0; } }
 
-  .card.flash { border-color: var(--accent); }
-
   /* ── Preset list ── */
   .preset-list {
     display: flex;
     flex-direction: column;
     gap: 6px;
-    max-height: 200px;
+    max-height: 180px;
     overflow-y: auto;
   }
   .preset-item {
@@ -568,7 +500,6 @@
   }
   .preset-item:hover { background: rgba(108,140,255,0.08); }
   .preset-item .name { font-weight: 500; flex: 1; cursor: pointer; }
-  .preset-item .actions { display: flex; gap: 4px; }
 
   /* ── SSL section ── */
   .ssl-section {
@@ -579,7 +510,6 @@
     color: var(--text-dim);
   }
   .ssl-section a { color: var(--accent); text-decoration: none; }
-  .ssl-section a:hover { text-decoration: underline; }
 
   /* ── Responsive ── */
   @media (max-width: 768px) {
@@ -610,14 +540,12 @@
     <div class="no-video" id="noVideoMsg">
       <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
       <p>UVC Kamera Bekleniyor</p>
-      <small>Tarayıcı kamera erişim izni isteyecek</small>
     </div>
 
     <!-- Test capture preview overlay -->
     <div class="test-preview" id="testPreview">
       <button class="close-btn" onclick="closeTestPreview()">✕</button>
       <img id="testPreviewImg" src="" alt="Test capture">
-      <div class="label">Test Çekimi Önizleme</div>
     </div>
   </div>
 
@@ -625,7 +553,7 @@
   <div class="controls-panel">
 
     <div class="panel-header">
-      <h1>🔬 PiCam Controls</h1>
+      <h1>🔬 PiCam</h1>
       <div class="conn-status" id="connStatus">
         <span class="conn-dot"></span>
         <span id="connLabel">…</span>
@@ -635,165 +563,86 @@
     <!-- ─── Tab Bar ─── -->
     <div class="tab-bar">
       <button class="tab-btn active" id="tabBtnVideo" onclick="switchTab('video')">
-        🎥 Vizör
+        🎥 Görüntü
       </button>
       <button class="tab-btn" id="tabBtnCapture" onclick="switchTab('capture')">
-        📷 Capture
+        📷 Çekim
       </button>
     </div>
 
     <!-- ═══════════════════════════════════════════
-         VIDEO TAB — Viewfinder controls
+         GÖRÜNTÜ TAB — Sadece görüntü işleme
+         (brightness, contrast, saturation, sharpness)
     ═══════════════════════════════════════════ -->
     <div class="tab-content active" id="tabVideo">
 
-      <!-- ─── Live Exposure ─── -->
-      <div class="card" id="cardVideoExposure">
-        <div class="card-title">
-          📷 Canlı Pozlama
-          <span class="live-badge" id="liveBadge">● LIVE</span>
-        </div>
-
-        <div class="control-row">
-          <span class="control-label">Mod</span>
-          <div class="toggle-wrap">
-            <span>Auto</span>
-            <label class="toggle">
-              <input type="checkbox" id="videoExposureManual">
-              <span class="toggle-track"></span>
-              <span class="toggle-thumb"></span>
-            </label>
-            <span>Manuel</span>
-          </div>
-        </div>
-
-        <div class="control-row" id="videoExposureRow" style="opacity:0.35; pointer-events:none">
-          <span class="control-label">Süre <small>µs</small></span>
-          <input type="number" id="videoExposureValue" value="10000" min="100" max="5000000" step="100">
-        </div>
-
-        <div class="control-row">
-          <span class="control-label">Gain</span>
-          <div class="slider-wrap">
-            <input type="range" id="videoGainSlider" min="0" max="16" step="0.1" value="0">
-          </div>
-          <span class="control-value" id="videoGainDisplay">Auto</span>
-        </div>
+      <div class="info-box">
+        💡 Bu ayarlar vizördeki görüntüyü gerçek zamanlı olarak değiştirir. Capture'ı etkilemez.
       </div>
 
-      <!-- ─── AWB (shared view) ─── -->
-      <div class="card" id="cardVideoAwb">
-        <div class="card-title">☀️ Beyaz Denge</div>
-
-        <div class="control-row">
-          <span class="control-label">AWB</span>
-          <select id="videoAwbMode">
-            <option value="auto" selected>Auto</option>
-            <option value="incandescent">Incandescent</option>
-            <option value="tungsten">Tungsten</option>
-            <option value="fluorescent">Fluorescent</option>
-            <option value="indoor">Indoor</option>
-            <option value="daylight">Daylight</option>
-            <option value="cloudy">Cloudy</option>
-            <option value="custom">Custom</option>
-            <option value="manual">Manual (R/B)</option>
-          </select>
-        </div>
-
-        <div class="manual-gains" id="videoManualGains">
-          <div class="gain-field">
-            <label>Kırmızı (R)</label>
-            <input type="number" id="videoColourGainR" value="2.0" min="0.1" max="8.0" step="0.1" style="width:100%">
-          </div>
-          <div class="gain-field">
-            <label>Mavi (B)</label>
-            <input type="number" id="videoColourGainB" value="1.8" min="0.1" max="8.0" step="0.1" style="width:100%">
-          </div>
-        </div>
-      </div>
-
-      <!-- ─── Image Quality ─── -->
-      <div class="card" id="cardQuality">
-        <div class="card-title">🎨 Görüntü Kalitesi</div>
+      <div class="card">
+        <div class="card-title">🎨 Görüntü İşleme</div>
 
         <div class="control-row">
           <span class="control-label">Brightness</span>
           <div class="slider-wrap">
-            <input type="range" id="videoBrightness" min="-100" max="100" value="0">
+            <input type="range" id="slBrightness" min="-100" max="100" value="0">
           </div>
-          <span class="control-value" id="videoBrightnessDisplay">0</span>
+          <span class="control-value" id="dBrightness">0</span>
         </div>
 
         <div class="control-row">
           <span class="control-label">Contrast</span>
           <div class="slider-wrap">
-            <input type="range" id="videoContrast" min="0" max="100" value="50">
+            <input type="range" id="slContrast" min="0" max="100" value="50">
           </div>
-          <span class="control-value" id="videoContrastDisplay">50</span>
+          <span class="control-value" id="dContrast">50</span>
         </div>
 
         <div class="control-row">
           <span class="control-label">Saturation</span>
           <div class="slider-wrap">
-            <input type="range" id="videoSaturation" min="0" max="100" value="50">
+            <input type="range" id="slSaturation" min="0" max="100" value="50">
           </div>
-          <span class="control-value" id="videoSaturationDisplay">50</span>
+          <span class="control-value" id="dSaturation">50</span>
         </div>
 
         <div class="control-row">
           <span class="control-label">Sharpness</span>
           <div class="slider-wrap">
-            <input type="range" id="videoSharpness" min="0" max="100" value="50">
+            <input type="range" id="slSharpness" min="0" max="100" value="50">
           </div>
-          <span class="control-value" id="videoSharpnessDisplay">50</span>
+          <span class="control-value" id="dSharpness">50</span>
         </div>
       </div>
 
-      <!-- ─── Video Actions ─── -->
       <div class="btn-row">
-        <button class="btn btn-reset" id="btnResetVideo" onclick="resetVideoControls()">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
-          Vizör Sıfırla
+        <button class="btn btn-reset" onclick="resetImageProcessing()">
+          🔄 Görüntü Sıfırla
         </button>
       </div>
     </div>
 
     <!-- ═══════════════════════════════════════════
-         CAPTURE TAB — Still capture settings
+         ÇEKİM TAB — Exposure, Gain, Format
+         Ayarlar vizöre ANINDA yansır
     ═══════════════════════════════════════════ -->
     <div class="tab-content" id="tabCapture">
 
-      <!-- ─── Format ─── -->
-      <div class="card">
-        <div class="card-title">📁 Çıktı Formatı</div>
-        <div class="control-row">
-          <span class="control-label">Format</span>
-          <div class="radio-group">
-            <button class="radio-btn active" id="fmtDng" onclick="setCaptureFormat('dng')">DNG</button>
-            <button class="radio-btn" id="fmtJpeg" onclick="setCaptureFormat('jpeg')">JPEG</button>
-          </div>
-        </div>
-        <div class="quality-row" id="qualityRow">
-          <div class="control-row">
-            <span class="control-label">Kalite</span>
-            <div class="slider-wrap">
-              <input type="range" id="captureQuality" min="1" max="100" value="90">
-            </div>
-            <span class="control-value" id="captureQualityDisplay">90</span>
-          </div>
-        </div>
+      <div class="info-box">
+        📷 Exposure ve Gain vizörde canlı önizlenir. Beğendiğinde "Capture" ile çek, "Kaydet" ile profili sakla.
       </div>
 
-      <!-- ─── Capture Exposure ─── -->
+      <!-- ─── Exposure ─── -->
       <div class="card">
-        <div class="card-title">📷 Capture Pozlama</div>
+        <div class="card-title">⏱️ Pozlama (Exposure)</div>
 
         <div class="control-row">
           <span class="control-label">Mod</span>
           <div class="toggle-wrap">
             <span>Auto</span>
             <label class="toggle">
-              <input type="checkbox" id="captureExposureManual">
+              <input type="checkbox" id="expManual" onchange="onExposureToggle()">
               <span class="toggle-track"></span>
               <span class="toggle-thumb"></span>
             </label>
@@ -801,87 +650,85 @@
           </div>
         </div>
 
-        <div class="control-row" id="captureExposureRow" style="opacity:0.35; pointer-events:none">
+        <div class="control-row" id="expRow" style="opacity:0.35; pointer-events:none">
           <span class="control-label">Süre <small>µs</small></span>
-          <input type="number" id="captureExposureValue" value="10000" min="100" max="5000000" step="100">
+          <input type="number" id="expValue" value="20000" min="100" max="5000000" step="500">
         </div>
+      </div>
+
+      <!-- ─── Gain ─── -->
+      <div class="card">
+        <div class="card-title">📈 Kazanç (Gain)</div>
 
         <div class="control-row">
           <span class="control-label">Gain</span>
           <div class="slider-wrap">
-            <input type="range" id="captureGainSlider" min="0" max="16" step="0.1" value="0">
+            <input type="range" id="slGain" min="0" max="16" step="0.1" value="0">
           </div>
-          <span class="control-value" id="captureGainDisplay">Auto</span>
+          <span class="control-value" id="dGain">Auto</span>
+        </div>
+
+        <div style="font-size:0.65rem; color:var(--text-dim); margin-top:4px">
+          0 = Otomatik  ·  1.0–16.0 = Manuel kazanç
         </div>
       </div>
 
-      <!-- ─── Capture AWB ─── -->
+      <!-- ─── Format ─── -->
       <div class="card">
-        <div class="card-title">☀️ Capture Beyaz Denge</div>
+        <div class="card-title">📁 Çıktı Formatı</div>
 
         <div class="control-row">
-          <span class="control-label">AWB</span>
-          <select id="captureAwbMode">
-            <option value="auto" selected>Auto</option>
-            <option value="incandescent">Incandescent</option>
-            <option value="tungsten">Tungsten</option>
-            <option value="fluorescent">Fluorescent</option>
-            <option value="indoor">Indoor</option>
-            <option value="daylight">Daylight</option>
-            <option value="cloudy">Cloudy</option>
-            <option value="custom">Custom</option>
-            <option value="manual">Manual (R/B)</option>
-          </select>
+          <span class="control-label">Format</span>
+          <div class="radio-group">
+            <button class="radio-btn active" id="fmtDng" onclick="setFormat('dng')">DNG (RAW)</button>
+            <button class="radio-btn" id="fmtJpeg" onclick="setFormat('jpeg')">JPEG</button>
+          </div>
         </div>
 
-        <div class="manual-gains" id="captureManualGains">
-          <div class="gain-field">
-            <label>Kırmızı (R)</label>
-            <input type="number" id="captureColourGainR" value="2.0" min="0.1" max="8.0" step="0.1" style="width:100%">
-          </div>
-          <div class="gain-field">
-            <label>Mavi (B)</label>
-            <input type="number" id="captureColourGainB" value="1.8" min="0.1" max="8.0" step="0.1" style="width:100%">
+        <div class="quality-row" id="qualityRow">
+          <div class="control-row">
+            <span class="control-label">Kalite</span>
+            <div class="slider-wrap">
+              <input type="range" id="slQuality" min="1" max="100" value="90">
+            </div>
+            <span class="control-value" id="dQuality">90</span>
           </div>
         </div>
       </div>
 
-      <!-- ─── Capture Actions ─── -->
+      <!-- ─── Actions ─── -->
       <div class="btn-row">
-        <button class="btn btn-test" id="btnTestCapture" onclick="testCapture()">
-          🔍 Test Çekimi
+        <button class="btn btn-test" onclick="testCapture()">
+          🔍 Test
         </button>
-        <button class="btn btn-capture" id="btnCapture" onclick="captureStill()">
+        <button class="btn btn-capture" onclick="captureStill()">
           📷 Capture
         </button>
       </div>
 
       <div class="btn-row">
-        <button class="btn btn-save" onclick="saveCaptureProfile()">
+        <button class="btn btn-save" onclick="saveProfile()">
           💾 Profili Kaydet
         </button>
-        <button class="btn btn-reset" onclick="resetCaptureProfile()">
+        <button class="btn btn-reset" onclick="resetProfile()">
           🔄 Default
         </button>
       </div>
 
-      <!-- ─── Dynamic Presets ─── -->
+      <!-- ─── Profiller ─── -->
       <div class="card">
-        <div class="card-title">⚡ Mikroskop Profilleri</div>
-        <div class="preset-list" id="presetList">
-          <!-- Populated by JS -->
-        </div>
+        <div class="card-title">⚡ Kayıtlı Profiller</div>
+        <div class="preset-list" id="presetList"></div>
         <div style="display:flex; gap:6px; margin-top:10px">
           <input type="text" id="presetName" placeholder="Profil adı…">
-          <button class="btn btn-sm btn-save" onclick="savePreset()">Kaydet</button>
+          <button class="btn btn-sm btn-save" onclick="savePreset()">+</button>
         </div>
       </div>
     </div>
 
-    <!-- ─── SSL Certificate ─── -->
+    <!-- ─── SSL ─── -->
     <div class="ssl-section">
       📜 <a href="/picam-ca.crt" download>SSL Sertifika İndir</a>
-      <small style="display:block; margin-top:2px">Tarayıcı uyarısını kaldırmak için Mac Keychain'e ekleyin.</small>
     </div>
 
   </div>
@@ -893,14 +740,13 @@
 /* ═══════════════════════════════════════════════════
  *  CONFIG
  * ═══════════════════════════════════════════════════ */
-const BASE_URL = (window.location.protocol === 'file:')
+const BASE_URL = (location.protocol === 'file:')
   ? 'http://192.168.7.2:8080'
   : '';
 
 const DEBOUNCE_MS = 300;
 const $ = id => document.getElementById(id);
 
-/* State */
 let captureFormat = 'dng';
 
 /* ═══════════════════════════════════════════════════
@@ -914,152 +760,122 @@ function switchTab(tab) {
 }
 
 /* ═══════════════════════════════════════════════════
- *  UVC VIDEO PREVIEW
+ *  UVC VIDEO
  * ═══════════════════════════════════════════════════ */
 async function initVideo() {
-  const video  = $('videoPreview');
-  const noMsg  = $('noVideoMsg');
-  const dot    = $('liveDot');
-  const label  = $('liveLabel');
-
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { width: { ideal: 1920 }, height: { ideal: 1080 } },
       audio: false
     });
-    video.srcObject = stream;
-    video.style.display = 'block';
-    noMsg.style.display = 'none';
-    dot.classList.add('connected');
-    label.textContent = 'LIVE';
+    $('videoPreview').srcObject = stream;
+    $('videoPreview').style.display = 'block';
+    $('noVideoMsg').style.display = 'none';
+    $('liveDot').classList.add('connected');
+    $('liveLabel').textContent = 'LIVE';
   } catch (err) {
-    console.warn('UVC erişimi başarısız:', err);
-    video.style.display = 'none';
-    noMsg.style.display = 'block';
-    label.textContent = 'Kamera bulunamadı';
+    $('videoPreview').style.display = 'none';
+    $('noVideoMsg').style.display = 'block';
+    $('liveLabel').textContent = 'Kamera bulunamadı';
   }
 }
 
 /* ═══════════════════════════════════════════════════
  *  CONNECTION CHECK
  * ═══════════════════════════════════════════════════ */
-let connOk = false;
-
 async function checkConnection() {
-  const el = $('connStatus');
-  const lb = $('connLabel');
   try {
-    el.className = 'conn-status loading';
-    lb.textContent = 'Checking…';
     const ctrl = new AbortController();
-    const tId = setTimeout(() => ctrl.abort(), 5000);
-    await fetch(`${BASE_URL}/video_controls?awb=auto`, { signal: ctrl.signal });
-    clearTimeout(tId);
-    connOk = true;
-    el.className = 'conn-status ok';
-    lb.textContent = 'Connected';
-  } catch (err) {
-    connOk = false;
-    el.className = 'conn-status error';
-    lb.textContent = 'Offline';
+    setTimeout(() => ctrl.abort(), 4000);
+    // Basit bir GET — sadece bağlantı testi
+    await fetch(`${BASE_URL}/reset_controls`, { signal: ctrl.signal });
+    $('connStatus').className = 'conn-status ok';
+    $('connLabel').textContent = 'Bağlı';
+  } catch {
+    $('connStatus').className = 'conn-status error';
+    $('connLabel').textContent = 'Bağlantı yok';
   }
 }
 
 /* ═══════════════════════════════════════════════════
- *  BUILD PARAMS (Video)
+ *  SEND ALL CONTROLS TO /video_controls
+ *
+ *  Tek bir endpoint — hem görüntü işleme hem
+ *  exposure/gain parametreleri gönderilir.
+ *  Vizör her zaman gerçek durumu gösterir.
  * ═══════════════════════════════════════════════════ */
-function buildVideoParams() {
+function buildAllParams() {
   const p = new URLSearchParams();
 
-  if ($('videoExposureManual').checked) {
-    const us = parseInt($('videoExposureValue').value) || 0;
+  // ── Görüntü işleme ──
+  p.set('brightness', $('slBrightness').value);
+  p.set('contrast', $('slContrast').value);
+  p.set('saturation', $('slSaturation').value);
+  p.set('sharpness', $('slSharpness').value);
+
+  // ── Exposure ──
+  if ($('expManual').checked) {
+    const us = parseInt($('expValue').value) || 0;
     if (us > 0) p.set('exposure', us);
   }
+  // exposure gönderilmezse → AE auto
 
-  const gain = parseFloat($('videoGainSlider').value);
+  // ── Gain ──
+  const gain = parseFloat($('slGain').value);
   if (gain > 0) p.set('gain', gain);
-
-  p.set('awb', $('videoAwbMode').value);
-  if ($('videoAwbMode').value === 'manual') {
-    p.set('colour_gain_r', parseFloat($('videoColourGainR').value) || 2.0);
-    p.set('colour_gain_b', parseFloat($('videoColourGainB').value) || 1.8);
-  }
-
-  p.set('brightness', $('videoBrightness').value);
-  p.set('contrast', $('videoContrast').value);
-  p.set('saturation', $('videoSaturation').value);
-  p.set('sharpness', $('videoSharpness').value);
+  // gain=0 → AG auto
 
   return p.toString();
 }
 
-/* ═══════════════════════════════════════════════════
- *  BUILD PARAMS (Capture)
- * ═══════════════════════════════════════════════════ */
-function buildCaptureParams() {
-  const p = new URLSearchParams();
-
-  if ($('captureExposureManual').checked) {
-    const us = parseInt($('captureExposureValue').value) || 0;
-    if (us > 0) p.set('exposure', us);
-  }
-
-  const gain = parseFloat($('captureGainSlider').value);
-  if (gain > 0) p.set('gain', gain);
-
-  p.set('awb', $('captureAwbMode').value);
-  if ($('captureAwbMode').value === 'manual') {
-    p.set('colour_gain_r', parseFloat($('captureColourGainR').value) || 2.0);
-    p.set('colour_gain_b', parseFloat($('captureColourGainB').value) || 1.8);
-  }
-
-  p.set('format', captureFormat);
-  if (captureFormat === 'jpeg') {
-    p.set('quality', $('captureQuality').value);
-  }
-
-  return p.toString();
-}
-
-/* ═══════════════════════════════════════════════════
- *  AUTO-APPLY VIDEO CONTROLS (debounced)
- * ═══════════════════════════════════════════════════ */
 let applyTimer = null;
-let applyInFlight = false;
+let applyBusy = false;
 
 function scheduleApply() {
-  $('liveBadge').classList.add('active');
   clearTimeout(applyTimer);
-  applyTimer = setTimeout(() => applyVideoControls(true), DEBOUNCE_MS);
+  applyTimer = setTimeout(applyAll, DEBOUNCE_MS);
 }
 
-async function applyVideoControls(silent = false) {
-  if (applyInFlight) return;
-  applyInFlight = true;
-
-  const params = buildVideoParams();
-  const url = `${BASE_URL}/video_controls?${params}`;
-
+async function applyAll() {
+  if (applyBusy) return;
+  applyBusy = true;
   try {
+    const url = `${BASE_URL}/video_controls?${buildAllParams()}`;
     const res = await fetch(url);
-    if (!res.ok) throw new Error(`${res.status}`);
-    if (!silent) toast('Vizör kontrolleri güncellendi', 'success');
-
-    const card = $('cardQuality');
-    card.classList.add('flash');
-    setTimeout(() => card.classList.remove('flash'), 400);
+    if (!res.ok) throw new Error(res.status);
   } catch (err) {
-    if (!silent) toast('Hata: ' + err.message, 'error');
+    console.warn('video_controls hata:', err);
   } finally {
-    applyInFlight = false;
-    setTimeout(() => $('liveBadge').classList.remove('active'), 1500);
+    applyBusy = false;
   }
 }
 
 /* ═══════════════════════════════════════════════════
- *  CAPTURE FORMAT
+ *  GÖRÜNTÜ İŞLEME SIFIRLAMA
  * ═══════════════════════════════════════════════════ */
-function setCaptureFormat(fmt) {
+function resetImageProcessing() {
+  $('slBrightness').value = 0;  $('dBrightness').textContent = '0';
+  $('slContrast').value = 50;   $('dContrast').textContent = '50';
+  $('slSaturation').value = 50; $('dSaturation').textContent = '50';
+  $('slSharpness').value = 50;  $('dSharpness').textContent = '50';
+  applyAll();
+  toast('Görüntü ayarları sıfırlandı', 'success');
+}
+
+/* ═══════════════════════════════════════════════════
+ *  EXPOSURE TOGGLE
+ * ═══════════════════════════════════════════════════ */
+function onExposureToggle() {
+  const on = $('expManual').checked;
+  $('expRow').style.opacity = on ? '1' : '0.35';
+  $('expRow').style.pointerEvents = on ? 'auto' : 'none';
+  scheduleApply(); // Vizöre hemen yansıt
+}
+
+/* ═══════════════════════════════════════════════════
+ *  FORMAT SEÇİMİ
+ * ═══════════════════════════════════════════════════ */
+function setFormat(fmt) {
   captureFormat = fmt;
   $('fmtDng').classList.toggle('active', fmt === 'dng');
   $('fmtJpeg').classList.toggle('active', fmt === 'jpeg');
@@ -1067,16 +883,30 @@ function setCaptureFormat(fmt) {
 }
 
 /* ═══════════════════════════════════════════════════
- *  CAPTURE STILL
+ *  CAPTURE
  * ═══════════════════════════════════════════════════ */
-async function captureStill() {
-  toast('Capture başlatılıyor…', 'info');
-  const params = buildCaptureParams();
-  const url = `${BASE_URL}/capture?${params}`;
+function buildCaptureParams() {
+  const p = new URLSearchParams();
 
+  if ($('expManual').checked) {
+    const us = parseInt($('expValue').value) || 0;
+    if (us > 0) p.set('exposure', us);
+  }
+  const gain = parseFloat($('slGain').value);
+  if (gain > 0) p.set('gain', gain);
+
+  p.set('format', captureFormat);
+  if (captureFormat === 'jpeg')
+    p.set('quality', $('slQuality').value);
+
+  return p.toString();
+}
+
+async function captureStill() {
+  toast('Capture…', 'info');
   try {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    const res = await fetch(`${BASE_URL}/capture?${buildCaptureParams()}`);
+    if (!res.ok) throw new Error(res.statusText);
     const blob = await res.blob();
     if (blob.size > 0) {
       const ext = captureFormat === 'jpeg' ? 'jpg' : 'dng';
@@ -1099,12 +929,11 @@ async function testCapture() {
   toast('Test çekimi…', 'info');
   try {
     const res = await fetch(`${BASE_URL}/test_capture`);
-    if (!res.ok) throw new Error(`${res.status}`);
+    if (!res.ok) throw new Error(res.status);
     const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    $('testPreviewImg').src = url;
+    $('testPreviewImg').src = URL.createObjectURL(blob);
     $('testPreview').classList.add('show');
-    toast('Test çekimi tamamlandı', 'success');
+    toast('Test OK ✓', 'success');
   } catch (err) {
     toast('Test hatası: ' + err.message, 'error');
   }
@@ -1112,108 +941,66 @@ async function testCapture() {
 
 function closeTestPreview() {
   $('testPreview').classList.remove('show');
-  $('testPreviewImg').src = '';
 }
 
 /* ═══════════════════════════════════════════════════
- *  SAVE / RESET / LOAD CAPTURE PROFILE
+ *  PROFİL KAYDET / YÜKLE / SIFIRLA  (sunucuya)
  * ═══════════════════════════════════════════════════ */
-async function saveCaptureProfile() {
-  const params = buildCaptureParams();
+async function saveProfile() {
   try {
-    const res = await fetch(`${BASE_URL}/capture_controls?${params}`);
-    if (!res.ok) throw new Error(`${res.status}`);
-    toast('Capture profili kaydedildi ✓', 'success');
+    const res = await fetch(`${BASE_URL}/capture_controls?${buildCaptureParams()}`);
+    if (!res.ok) throw new Error(res.status);
+    toast('Profil kaydedildi ✓', 'success');
   } catch (err) {
     toast('Kayıt hatası: ' + err.message, 'error');
   }
 }
 
-async function resetCaptureProfile() {
+async function resetProfile() {
   try {
-    const res = await fetch(`${BASE_URL}/capture_controls/reset`);
-    if (!res.ok) throw new Error(`${res.status}`);
-    resetCaptureUI();
-    toast('Capture profili sıfırlandı ✓', 'success');
+    await fetch(`${BASE_URL}/capture_controls/reset`);
+    $('expManual').checked = false;
+    onExposureToggle();
+    $('expValue').value = 20000;
+    $('slGain').value = 0; $('dGain').textContent = 'Auto';
+    setFormat('dng');
+    $('slQuality').value = 90; $('dQuality').textContent = '90';
+    scheduleApply(); // Vizörü de sıfırla
+    toast('Profil sıfırlandı ✓', 'success');
   } catch (err) {
     toast('Reset hatası: ' + err.message, 'error');
   }
 }
 
-async function loadCaptureProfile() {
+async function loadProfile() {
   try {
     const res = await fetch(`${BASE_URL}/capture_controls`);
     if (!res.ok) return;
     const p = await res.json();
 
     if (p.exposure_us > 0) {
-      $('captureExposureManual').checked = true;
-      $('captureExposureValue').value = p.exposure_us;
+      $('expManual').checked = true;
+      $('expValue').value = p.exposure_us;
     } else {
-      $('captureExposureManual').checked = false;
+      $('expManual').checked = false;
     }
-    toggleCaptureExposureRow();
+    onExposureToggle();
 
-    $('captureGainSlider').value = p.gain || 0;
-    $('captureGainDisplay').textContent = p.gain > 0 ? p.gain.toFixed(1) : 'Auto';
+    $('slGain').value = p.gain || 0;
+    $('dGain').textContent = p.gain > 0 ? parseFloat(p.gain).toFixed(1) : 'Auto';
 
-    $('captureAwbMode').value = p.awb_mode || 'auto';
-    if (p.colour_gain_r) $('captureColourGainR').value = p.colour_gain_r;
-    if (p.colour_gain_b) $('captureColourGainB').value = p.colour_gain_b;
-    toggleCaptureManualGains();
+    setFormat(p.format === 'jpeg' ? 'jpeg' : 'dng');
+    if (p.jpeg_quality) { $('slQuality').value = p.jpeg_quality; $('dQuality').textContent = p.jpeg_quality; }
 
-    setCaptureFormat(p.format === 'jpeg' ? 'jpeg' : 'dng');
-    if (p.jpeg_quality) $('captureQuality').value = p.jpeg_quality;
-    $('captureQualityDisplay').textContent = p.jpeg_quality || 90;
-
+    // Yüklenen exposure/gain'i vizöre de yansıt
+    scheduleApply();
   } catch (err) {
-    console.warn('Could not load capture profile:', err);
+    console.warn('Profil yüklenemedi:', err);
   }
 }
 
 /* ═══════════════════════════════════════════════════
- *  RESET VIDEO CONTROLS
- * ═══════════════════════════════════════════════════ */
-async function resetVideoControls() {
-  try {
-    const res = await fetch(`${BASE_URL}/reset_controls`);
-    if (!res.ok) throw new Error(`${res.status}`);
-    resetVideoUI();
-    toast('Vizör kontrolleri sıfırlandı ✓', 'success');
-  } catch (err) {
-    toast('Reset hatası: ' + err.message, 'error');
-  }
-}
-
-function resetVideoUI() {
-  $('videoExposureManual').checked = false;
-  $('videoExposureValue').value = 10000;
-  $('videoGainSlider').value = 0;
-  $('videoAwbMode').value = 'auto';
-  $('videoColourGainR').value = 2.0;
-  $('videoColourGainB').value = 1.8;
-  $('videoBrightness').value = 0;
-  $('videoContrast').value = 50;
-  $('videoSaturation').value = 50;
-  $('videoSharpness').value = 50;
-  updateVideoDisplays();
-}
-
-function resetCaptureUI() {
-  $('captureExposureManual').checked = false;
-  $('captureExposureValue').value = 10000;
-  $('captureGainSlider').value = 0;
-  $('captureAwbMode').value = 'auto';
-  $('captureColourGainR').value = 2.0;
-  $('captureColourGainB').value = 1.8;
-  setCaptureFormat('dng');
-  $('captureQuality').value = 90;
-  $('captureQualityDisplay').textContent = '90';
-  updateCaptureDisplays();
-}
-
-/* ═══════════════════════════════════════════════════
- *  DYNAMIC PRESETS (localStorage)
+ *  YEREL PROFİLLER (localStorage)
  * ═══════════════════════════════════════════════════ */
 function getPresets() {
   try { return JSON.parse(localStorage.getItem('picam_presets') || '[]'); }
@@ -1226,58 +1013,47 @@ function renderPresets() {
   const presets = getPresets();
   list.innerHTML = '';
   presets.forEach((p, i) => {
-    const item = document.createElement('div');
-    item.className = 'preset-item';
-    item.innerHTML = `
-      <span class="name" onclick="loadPreset(${i})">${p.name}</span>
-      <div class="actions">
-        <button class="btn-danger-sm" onclick="deletePreset(${i})">✕</button>
-      </div>`;
-    list.appendChild(item);
+    const d = document.createElement('div');
+    d.className = 'preset-item';
+    d.innerHTML = `
+      <span class="name" onclick="loadPresetLocal(${i})">${p.name}</span>
+      <button class="btn-danger-sm" onclick="deletePreset(${i})">✕</button>`;
+    list.appendChild(d);
   });
 }
 
 function savePreset() {
   const name = $('presetName').value.trim();
-  if (!name) { toast('Profil adı girin', 'error'); return; }
-
+  if (!name) { toast('İsim girin', 'error'); return; }
   const preset = {
     name,
-    expManual: $('captureExposureManual').checked,
-    expValue: $('captureExposureValue').value,
-    gain: $('captureGainSlider').value,
-    awb: $('captureAwbMode').value,
-    cgr: $('captureColourGainR').value,
-    cgb: $('captureColourGainB').value,
+    expManual: $('expManual').checked,
+    expValue: $('expValue').value,
+    gain: $('slGain').value,
     format: captureFormat,
-    quality: $('captureQuality').value,
+    quality: $('slQuality').value,
   };
-
   const presets = getPresets();
   presets.push(preset);
   setPresets(presets);
   renderPresets();
   $('presetName').value = '';
-  toast(`Profil "${name}" kaydedildi`, 'success');
+  toast(`"${name}" kaydedildi`, 'success');
 }
 
-function loadPreset(idx) {
-  const presets = getPresets();
-  const p = presets[idx];
+function loadPresetLocal(idx) {
+  const p = getPresets()[idx];
   if (!p) return;
-
-  $('captureExposureManual').checked = !!p.expManual;
-  $('captureExposureValue').value = p.expValue || 10000;
-  $('captureGainSlider').value = p.gain || 0;
-  $('captureAwbMode').value = p.awb || 'auto';
-  $('captureColourGainR').value = p.cgr || 2.0;
-  $('captureColourGainB').value = p.cgb || 1.8;
-  setCaptureFormat(p.format || 'dng');
-  $('captureQuality').value = p.quality || 90;
-  $('captureQualityDisplay').textContent = p.quality || 90;
-
-  updateCaptureDisplays();
-  toast(`Profil "${p.name}" yüklendi`, 'info');
+  $('expManual').checked = !!p.expManual;
+  $('expValue').value = p.expValue || 20000;
+  onExposureToggle();
+  $('slGain').value = p.gain || 0;
+  $('dGain').textContent = parseFloat(p.gain || 0) > 0 ? parseFloat(p.gain).toFixed(1) : 'Auto';
+  setFormat(p.format || 'dng');
+  $('slQuality').value = p.quality || 90;
+  $('dQuality').textContent = p.quality || '90';
+  scheduleApply(); // Vizöre yansıt
+  toast(`"${p.name}" yüklendi`, 'info');
 }
 
 function deletePreset(idx) {
@@ -1290,44 +1066,8 @@ function deletePreset(idx) {
 }
 
 /* ═══════════════════════════════════════════════════
- *  UI HELPERS
+ *  TOAST
  * ═══════════════════════════════════════════════════ */
-function updateVideoDisplays() {
-  toggleVideoExposureRow();
-  toggleVideoManualGains();
-  const g = parseFloat($('videoGainSlider').value);
-  $('videoGainDisplay').textContent = g > 0 ? g.toFixed(1) : 'Auto';
-  $('videoBrightnessDisplay').textContent = $('videoBrightness').value;
-  $('videoContrastDisplay').textContent   = $('videoContrast').value;
-  $('videoSaturationDisplay').textContent = $('videoSaturation').value;
-  $('videoSharpnessDisplay').textContent  = $('videoSharpness').value;
-}
-
-function updateCaptureDisplays() {
-  toggleCaptureExposureRow();
-  toggleCaptureManualGains();
-  const g = parseFloat($('captureGainSlider').value);
-  $('captureGainDisplay').textContent = g > 0 ? g.toFixed(1) : 'Auto';
-}
-
-function toggleVideoExposureRow() {
-  const on = $('videoExposureManual').checked;
-  $('videoExposureRow').style.opacity = on ? '1' : '0.35';
-  $('videoExposureRow').style.pointerEvents = on ? 'auto' : 'none';
-}
-function toggleVideoManualGains() {
-  $('videoManualGains').classList.toggle('show', $('videoAwbMode').value === 'manual');
-}
-
-function toggleCaptureExposureRow() {
-  const on = $('captureExposureManual').checked;
-  $('captureExposureRow').style.opacity = on ? '1' : '0.35';
-  $('captureExposureRow').style.pointerEvents = on ? 'auto' : 'none';
-}
-function toggleCaptureManualGains() {
-  $('captureManualGains').classList.toggle('show', $('captureAwbMode').value === 'manual');
-}
-
 function toast(msg, type='success') {
   const el = document.createElement('div');
   el.className = `toast ${type}`;
@@ -1340,52 +1080,38 @@ function toast(msg, type='success') {
  *  EVENT LISTENERS
  * ═══════════════════════════════════════════════════ */
 
-// Video sliders → auto-apply
-['videoBrightness','videoContrast','videoSaturation','videoSharpness'].forEach(id => {
+// Görüntü işleme sliderları → vizöre hemen yansıt
+['slBrightness','slContrast','slSaturation','slSharpness'].forEach(id => {
   $(id).addEventListener('input', () => {
-    $(id + 'Display').textContent = $(id).value;
+    // Display güncelle
+    const d = id.replace('sl','d');
+    $(d).textContent = $(id).value;
     scheduleApply();
   });
 });
 
-$('videoGainSlider').addEventListener('input', () => {
-  const v = parseFloat($('videoGainSlider').value);
-  $('videoGainDisplay').textContent = v > 0 ? v.toFixed(1) : 'Auto';
+// Gain slider → vizöre hemen yansıt
+$('slGain').addEventListener('input', () => {
+  const v = parseFloat($('slGain').value);
+  $('dGain').textContent = v > 0 ? v.toFixed(1) : 'Auto';
   scheduleApply();
 });
 
-$('videoExposureManual').addEventListener('change', () => {
-  toggleVideoExposureRow();
-  scheduleApply();
-});
-$('videoExposureValue').addEventListener('change', scheduleApply);
-$('videoAwbMode').addEventListener('change', () => {
-  toggleVideoManualGains();
-  scheduleApply();
-});
-$('videoColourGainR').addEventListener('change', scheduleApply);
-$('videoColourGainB').addEventListener('change', scheduleApply);
+// Exposure value → vizöre hemen yansıt
+$('expValue').addEventListener('change', scheduleApply);
 
-// Capture controls — no auto-apply, just update displays
-$('captureExposureManual').addEventListener('change', toggleCaptureExposureRow);
-$('captureGainSlider').addEventListener('input', () => {
-  const v = parseFloat($('captureGainSlider').value);
-  $('captureGainDisplay').textContent = v > 0 ? v.toFixed(1) : 'Auto';
-});
-$('captureAwbMode').addEventListener('change', toggleCaptureManualGains);
-$('captureQuality').addEventListener('input', () => {
-  $('captureQualityDisplay').textContent = $('captureQuality').value;
+// Quality slider
+$('slQuality').addEventListener('input', () => {
+  $('dQuality').textContent = $('slQuality').value;
 });
 
 /* ═══════════════════════════════════════════════════
  *  INIT
  * ═══════════════════════════════════════════════════ */
-updateVideoDisplays();
-updateCaptureDisplays();
-renderPresets();
 initVideo();
 checkConnection();
-loadCaptureProfile();
+loadProfile();
+renderPresets();
 setInterval(checkConnection, 15000);
 </script>
 
