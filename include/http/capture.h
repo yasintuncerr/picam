@@ -14,6 +14,9 @@
 #include "still-source.h"
 #include "capture_controls.h"
 
+/* Default path for persistent capture profile */
+#define CAPTURE_PROFILE_PATH "/home/picam/.picam_capture_profile.json"
+
 // Forward declarations
 struct http_server;
 struct video_source;
@@ -40,6 +43,11 @@ struct http_server {
     struct still_source *still_src;
     pthread_t server_thread;
     volatile bool running;
+
+    /* Saved capture profile — used when /capture is called without params */
+    capture_controls_t  saved_capture_profile;
+    bool                profile_loaded;
+    pthread_mutex_t     profile_mtx;
 };
 
 /**
@@ -55,5 +63,9 @@ struct http_server *http_capture_new(int port, struct video_source *video_src);
  * @param server The server instance to destroy.
  */
 void http_capture_destroy(struct http_server *server);
+
+/* Profile persistence (JSON) */
+int  capture_profile_save(const capture_controls_t *cc, const char *path);
+int  capture_profile_load(capture_controls_t *cc, const char *path);
 
 #endif /* __CAPTURE_H__ */

@@ -12,7 +12,6 @@
 extern "C" {
 #endif
 
-/* AWB modları — libcamera destekli tüm modlar + manual */
 typedef enum {
     AWB_AUTO         = 0,
     AWB_INCANDESCENT = 1,
@@ -25,46 +24,25 @@ typedef enum {
     AWB_MANUAL       = 8,   /* colour_gain_r / colour_gain_b manuel ayar */
 } awb_mode_t;
 
-/*
- * Birleşik kamera kontrol yapısı.
- * HTTP parametrelerinden parse edilir, captureStill() ve video kontrolüne iletilir.
- *
- * Normalizasyon kuralları:
- *   exposure_us  : 0       → AE açık (otomatik)
- *                  >0      → manuel, mikrosaniye
- *   gain         : 0.0     → AG açık (otomatik)
- *                  >0.0    → manuel kazanç (ör. 1.0 … 16.0)
- *   awb_mode     : AWB_AUTO … AWB_MANUAL
- *   colour_gain_r/b : 0.0  → yok sayılır (sadece AWB_MANUAL'da kullanılır)
- *   brightness   : -999    → yok say (sentinel), aralık -100…+100, 0 = nötr
- *   contrast     : -1      → yok say, aralık 0…100, 50 = 1.0
- *   saturation   : -1      → yok say, aralık 0…100, 50 = 1.0
- *   sharpness    : -1      → yok say, aralık 0…100, 50 = 1.0
- *
- * Kullanıcı → libcamera dönüşümleri:
- *   brightness  : val/100.0              → [-1.0, +1.0]
- *   contrast    : val/50.0               → [ 0.0,  2.0]  (50 → 1.0)
- *   saturation  : val/50.0               → [ 0.0,  2.0]  (50 → 1.0)
- *   sharpness   : val/50.0               → [ 0.0,  2.0]  (50 → 1.0)
- */
+typedef enum {
+    CAPTURE_FMT_DNG  = 0,
+    CAPTURE_FMT_JPEG = 1,
+} capture_format_t;
+
 typedef struct {
-    /* Pozlama */
-    int64_t  exposure_us;     /* 0 = AE auto */
-    float    gain;            /* 0.0 = AG auto */
-
-    /* Beyaz denge */
+    int64_t  exposure_us;
+    float    gain;
     awb_mode_t awb_mode;
-    float    colour_gain_r;   /* AWB_MANUAL: kırmızı kazanç, ör. 2.0 */
-    float    colour_gain_b;   /* AWB_MANUAL: mavi kazanç,  ör. 1.8 */
-
-    /* Görüntü kalitesi  (-1 = ayarlanmamış, varsayılan kullanılır) */
-    int      brightness;      /* -100 … +100,  0 nötr, -999 sentinel */
-    int      contrast;        /*    0 … 100,  50 = 1.0 */
-    int      saturation;      /*    0 … 100,  50 = 1.0 */
-    int      sharpness;       /*    0 … 100,  50 = 1.0 */
+    float    colour_gain_r;
+    float    colour_gain_b;
+    int      brightness;
+    int      contrast;
+    int      saturation;
+    int      sharpness;
+    capture_format_t format;
+    int      jpeg_quality;
 } capture_controls_t;
 
-/* Sıfır-başlatılmış, otomatik modda varsayılan kontroller */
 static inline capture_controls_t capture_controls_default(void)
 {
     capture_controls_t c;
@@ -73,10 +51,12 @@ static inline capture_controls_t capture_controls_default(void)
     c.awb_mode      = AWB_AUTO;
     c.colour_gain_r = 0.0f;
     c.colour_gain_b = 0.0f;
-    c.brightness    = -999; /* "ayarlanmamış" sentinel */
+    c.brightness    = -999;
     c.contrast      = -1;
     c.saturation    = -1;
     c.sharpness     = -1;
+    c.format        = CAPTURE_FMT_DNG;
+    c.jpeg_quality  = 90;
     return c;
 }
 

@@ -21,6 +21,11 @@
 #include <linux/videodev2.h>
 #endif
 
+/* libjpeg is always needed for EncodeBufferSync (still capture) */
+#ifdef ENABLE_HW_MJPEG
+#include <jpeglib.h>
+#endif
+
 
 struct StreamInfo
 {
@@ -45,6 +50,15 @@ public:
 			  StreamInfo const &info, int64_t timestamp_us,
 			  unsigned int cookie, int fd);
 	StreamInfo getStreamInfo(libcamera::Stream *stream);
+
+	/**
+	 * Synchronous one-shot JPEG encode for still capture.
+	 * Caller provides input YUV buffer + info, receives malloc'd JPEG output.
+	 * Returns 0 on success, -1 on failure.
+	 */
+	int EncodeBufferSync(void *mem, unsigned int size,
+			     StreamInfo const &info, int quality,
+			     void **out_jpeg, size_t *out_jpeg_size);
 
 private:
 	struct EncodeItem {

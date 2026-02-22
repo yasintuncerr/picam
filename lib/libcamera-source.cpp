@@ -1188,3 +1188,51 @@ extern "C" int libcamera_reset_controls(struct video_source *s)
 	std::cout << "Controls reset to defaults" << std::endl;
 	return 0;
 }
+
+/*
+ * libcamera_capture_jpeg()
+ *
+ * Synchronous JPEG capture from the video stream.
+ * Grabs the latest mapped video frame buffer and encodes it
+ * to JPEG using MjpegEncoder::EncodeBufferSync().
+ *
+ * The caller receives a malloc'd JPEG buffer that must be free()'d.
+ */
+extern "C" int libcamera_capture_jpeg(struct video_source *s,
+				      void **out_buf, size_t *out_size,
+				      int quality)
+{
+	struct libcamera_source *src = to_libcamera_source(s, video_src);
+
+	if (!src->video.encoder) {
+		std::cerr << "JPEG capture: no encoder available" << std::endl;
+		return -1;
+	}
+
+	if (!src->video.stream_on) {
+		std::cerr << "JPEG capture: video stream not running" << std::endl;
+		return -1;
+	}
+
+	/* Find the first mapped video buffer with data */
+	if (src->video.mapped_buffers_.empty()) {
+		std::cerr << "JPEG capture: no mapped video buffers" << std::endl;
+		return -1;
+	}
+
+	/* Use the first mapped buffer */
+	auto it = src->video.mapped_buffers_.begin();
+	void *yuv_mem = it->second.data();
+	unsigned int yuv_size = it->second.size();
+
+	/* Get stream info */
+	Stream *stream = src->config->at(0).stream();
+	StreamInfo info = src->video.encoder->getStreamInfo(stream);
+
+	std::cout << "JPEG capture: encoding " << info.width << "x" << info.height
+		  << " @ quality " << quality << std::endl;
+
+	return src->video.encoder->EncodeBufferSync(yuv_mem, yuv_size,
+						    info, quality,
+						    out_buf, out_size);
+}
