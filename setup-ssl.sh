@@ -70,6 +70,7 @@ subjectAltName = @alt_names
 IP.1 = ${IP_ADDR}
 DNS.1 = ${HOSTNAME}
 DNS.2 = ${HOSTNAME}.local
+DNS.3 = picam.device
 EOF
 
 # ── 5. Sign server certificate with CA ──
