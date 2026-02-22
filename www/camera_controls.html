@@ -35,8 +35,12 @@
   .dot{width:8px;height:8px;border-radius:50%;background:var(--danger);animation:blink 1.2s infinite}
   .dot.ok{background:var(--success);animation:none}
   @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+  .uvc-btn{position:absolute;top:10px;right:10px;padding:6px 12px;border-radius:18px;font-family:'Inter',sans-serif;font-size:.68rem;font-weight:600;cursor:pointer;border:none;backdrop-filter:blur(8px);z-index:2;transition:var(--tr)}
+  .uvc-btn.stop{background:rgba(255,92,108,.8);color:#fff}
+  .uvc-btn.start{background:rgba(61,220,132,.8);color:#0c0e14}
   .no-video{color:var(--text-dim);text-align:center;padding:40px}
   .no-video svg{margin-bottom:10px;opacity:.3}
+  .no-video .net-ok{font-size:.65rem;color:var(--success);margin-top:8px;opacity:.8}
 
   /* Test preview */
   .test-preview{position:absolute;bottom:10px;right:10px;background:rgba(0,0,0,.85);border:1px solid var(--card-border);border-radius:10px;padding:6px;display:none;z-index:3;max-width:260px;backdrop-filter:blur(10px)}
@@ -148,10 +152,12 @@
       <span class="dot" id="liveDot"></span>
       <span id="liveLabel">Bağlanıyor…</span>
     </div>
+    <button class="uvc-btn stop" id="uvcBtn" onclick="toggleUvc()">⏹ UVC Durdur</button>
     <video id="vid" autoplay playsinline muted></video>
     <div class="no-video" id="noVid">
       <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
-      <p>UVC Kamera Bekleniyor</p>
+      <p>UVC Video Kapalı</p>
+      <p class="net-ok" id="netNote">🌐 Network kontrolleri aktif — çekim yapabilirsiniz</p>
     </div>
     <div class="test-preview" id="tp">
       <button class="x" onclick="$('tp').classList.remove('show')">✕</button>
@@ -311,19 +317,50 @@ function tab(n) {
 }
 
 /* ── Video ── */
+let uvcStream = null;
+let uvcOn = false;
+
 async function initVid() {
   try {
-    const s = await navigator.mediaDevices.getUserMedia({video:{width:{ideal:1920},height:{ideal:1080}},audio:false});
-    $('vid').srcObject = s;
+    uvcStream = await navigator.mediaDevices.getUserMedia({video:{width:{ideal:1920},height:{ideal:1080}},audio:false});
+    $('vid').srcObject = uvcStream;
     $('vid').style.display = 'block';
     $('noVid').style.display = 'none';
     $('liveDot').classList.add('ok');
     $('liveLabel').textContent = 'LIVE';
+    $('uvcBtn').className = 'uvc-btn stop';
+    $('uvcBtn').textContent = '⏹ UVC Durdur';
+    uvcOn = true;
   } catch(e) {
     $('vid').style.display = 'none';
     $('noVid').style.display = 'block';
+    $('liveDot').classList.remove('ok');
     $('liveLabel').textContent = 'Kamera yok';
+    $('uvcBtn').className = 'uvc-btn start';
+    $('uvcBtn').textContent = '▶ UVC Başlat';
+    uvcOn = false;
   }
+}
+
+function stopVid() {
+  if (uvcStream) {
+    uvcStream.getTracks().forEach(t => t.stop());
+    uvcStream = null;
+  }
+  $('vid').srcObject = null;
+  $('vid').style.display = 'none';
+  $('noVid').style.display = 'block';
+  $('liveDot').classList.remove('ok');
+  $('liveLabel').textContent = 'UVC Kapalı';
+  $('uvcBtn').className = 'uvc-btn start';
+  $('uvcBtn').textContent = '▶ UVC Başlat';
+  uvcOn = false;
+  toast('UVC durduruldu — network kontrolleri aktif', 'i');
+}
+
+function toggleUvc() {
+  if (uvcOn) stopVid();
+  else initVid();
 }
 
 /* ── Conn check ── */
