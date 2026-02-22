@@ -275,7 +275,7 @@ static const char *awb_mode_to_string(awb_mode_t mode)
 static void send_profile_json(int fd, const capture_controls_t *cc)
 {
     char body[1024];
-    int blen = snprintf(body, sizeof(body),
+    snprintf(body, sizeof(body),
         "{"
         "\"exposure_us\":%lld,"
         "\"gain\":%.2f,"
