@@ -381,10 +381,10 @@ static void libcamera_source_video_process(libcamera_source *src)
 
 	/* Read current auto-exposure/gain from frame metadata */
 	const auto &metadata = request->metadata();
-	const auto *expVal = metadata.get(controls::ExposureTime);
+	auto expVal = metadata.get(controls::ExposureTime);
 	if (expVal)
 		src->current_exposure_us = *expVal;
-	const auto *gainVal = metadata.get(controls::AnalogueGain);
+	auto gainVal = metadata.get(controls::AnalogueGain);
 	if (gainVal)
 		src->current_gain = *gainVal;
 
