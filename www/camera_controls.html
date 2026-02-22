@@ -3,8 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PiCam — Microscope Camera Control</title>
-<meta name="description" content="PiCam microscope camera control interface for histopathology imaging.">
+<title>PiCam — Microscope Camera</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -19,508 +18,123 @@
     --warn: #ffb345;
     --text: #e4e7ef;
     --text-dim: #7a8299;
-    --text-bright: #ffffff;
+    --text-bright: #fff;
     --slider-track: rgba(255,255,255,0.08);
     --radius: 14px;
-    --transition: 0.2s cubic-bezier(.4,0,.2,1);
+    --tr: 0.2s cubic-bezier(.4,0,.2,1);
   }
-  * { margin:0; padding:0; box-sizing:border-box; }
-  body {
-    font-family: 'Inter', -apple-system, sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    min-height: 100vh;
-    line-height: 1.5;
-  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;line-height:1.5}
 
-  /* ── Layout ── */
-  .app {
-    display: flex;
-    flex-direction: row;
-    max-width: 1280px;
-    margin: 0 auto;
-    min-height: 100vh;
-    gap: 0;
-  }
+  .app{display:flex;max-width:1280px;margin:0 auto;min-height:100vh}
 
-  /* ── Video Panel ── */
-  .video-panel {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
-    position: relative;
-    background: #000;
-    min-height: 400px;
-  }
-  .video-panel video {
-    width: 100%;
-    max-height: 100%;
-    object-fit: contain;
-    border-radius: 4px;
-  }
-  .video-overlay {
-    position: absolute;
-    top: 12px; left: 12px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    background: rgba(0,0,0,0.6);
-    padding: 6px 12px;
-    border-radius: 20px;
-    font-size: 0.7rem;
-    font-weight: 500;
-    backdrop-filter: blur(8px);
-    z-index: 2;
-  }
-  .video-overlay .dot {
-    width: 8px; height: 8px;
-    border-radius: 50%;
-    background: var(--danger);
-    animation: blink 1.2s infinite;
-  }
-  .video-overlay .dot.connected { background: var(--success); animation: none; }
-  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  /* ─── Video ─── */
+  .video-panel{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;position:relative;background:#000;min-height:400px}
+  .video-panel video{width:100%;max-height:100%;object-fit:contain;border-radius:4px}
+  .video-overlay{position:absolute;top:10px;left:10px;display:flex;align-items:center;gap:6px;background:rgba(0,0,0,.6);padding:5px 10px;border-radius:18px;font-size:.68rem;font-weight:500;backdrop-filter:blur(8px);z-index:2}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--danger);animation:blink 1.2s infinite}
+  .dot.ok{background:var(--success);animation:none}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+  .no-video{color:var(--text-dim);text-align:center;padding:40px}
+  .no-video svg{margin-bottom:10px;opacity:.3}
 
-  /* ── Test capture preview ── */
-  .test-preview {
-    position: absolute;
-    bottom: 12px; right: 12px;
-    background: rgba(0,0,0,0.85);
-    border: 1px solid var(--card-border);
-    border-radius: 10px;
-    padding: 6px;
-    display: none;
-    z-index: 3;
-    max-width: 280px;
-    backdrop-filter: blur(10px);
-  }
-  .test-preview.show { display: block; }
-  .test-preview img {
-    width: 100%;
-    border-radius: 6px;
-  }
-  .test-preview .close-btn {
-    position: absolute;
-    top: -6px; right: -6px;
-    width: 20px; height: 20px;
-    border-radius: 50%;
-    background: var(--danger);
-    color: #fff;
-    border: none;
-    cursor: pointer;
-    font-size: 10px;
-    line-height: 20px;
-    text-align: center;
-  }
+  /* Test preview */
+  .test-preview{position:absolute;bottom:10px;right:10px;background:rgba(0,0,0,.85);border:1px solid var(--card-border);border-radius:10px;padding:6px;display:none;z-index:3;max-width:260px;backdrop-filter:blur(10px)}
+  .test-preview.show{display:block}
+  .test-preview img{width:100%;border-radius:6px}
+  .test-preview .x{position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;background:var(--danger);color:#fff;border:none;cursor:pointer;font-size:9px;line-height:18px;text-align:center}
 
-  .no-video {
-    color: var(--text-dim);
-    text-align: center;
-    padding: 40px;
-  }
-  .no-video svg { margin-bottom: 12px; opacity: 0.3; }
-  .no-video p { font-size: 0.85rem; }
+  /* ─── Controls Panel ─── */
+  .controls-panel{width:380px;overflow-y:auto;border-left:1px solid var(--card-border);display:flex;flex-direction:column}
 
-  /* ── Controls Panel ── */
-  .controls-panel {
-    width: 380px;
-    overflow-y: auto;
-    border-left: 1px solid var(--card-border);
-    display: flex;
-    flex-direction: column;
-  }
+  .panel-header{display:flex;align-items:center;justify-content:space-between;padding:14px 14px 10px;border-bottom:1px solid var(--card-border)}
+  .panel-header h1{font-size:1rem;font-weight:700;background:linear-gradient(135deg,var(--accent),#a78bfa);background-clip:text;-webkit-background-clip:text;-webkit-text-fill-color:transparent}
 
-  .panel-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 16px 16px 12px;
-    border-bottom: 1px solid var(--card-border);
-  }
-  .panel-header h1 {
-    font-size: 1.05rem;
-    font-weight: 700;
-    background: linear-gradient(135deg, var(--accent), #a78bfa);
-    background-clip: text;
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-  }
+  .conn-status{display:flex;align-items:center;gap:5px;font-size:.68rem;padding:3px 8px;border-radius:16px;background:var(--card);border:1px solid var(--card-border)}
+  .conn-dot{width:6px;height:6px;border-radius:50%;background:var(--text-dim)}
+  .conn-status.ok .conn-dot{background:var(--success);box-shadow:0 0 6px var(--success-glow)}
+  .conn-status.err .conn-dot{background:var(--danger)}
 
-  /* ── Status ── */
-  .conn-status {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 0.7rem;
-    padding: 4px 10px;
-    border-radius: 20px;
-    background: var(--card);
-    border: 1px solid var(--card-border);
-  }
-  .conn-dot {
-    width: 6px; height: 6px;
-    border-radius: 50%;
-    background: var(--text-dim);
-  }
-  .conn-status.ok .conn-dot { background: var(--success); box-shadow: 0 0 6px var(--success-glow); }
-  .conn-status.error .conn-dot { background: var(--danger); }
+  /* Tabs */
+  .tab-bar{display:flex;border-bottom:1px solid var(--card-border)}
+  .tab-btn{flex:1;padding:10px 6px;font-family:'Inter',sans-serif;font-size:.75rem;font-weight:600;color:var(--text-dim);background:rgba(255,255,255,.02);border:none;cursor:pointer;transition:var(--tr);border-bottom:2px solid transparent}
+  .tab-btn:hover{color:var(--text)}
+  .tab-btn.active{color:var(--accent);background:transparent;border-bottom-color:var(--accent)}
+  .tab-content{display:none;padding:12px 14px;flex-direction:column;gap:10px;flex:1;overflow-y:auto}
+  .tab-content.active{display:flex}
 
-  /* ── Tabs ── */
-  .tab-bar {
-    display: flex;
-    border-bottom: 1px solid var(--card-border);
-  }
-  .tab-btn {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    padding: 12px 8px;
-    font-family: 'Inter', sans-serif;
-    font-size: 0.78rem;
-    font-weight: 600;
-    color: var(--text-dim);
-    background: rgba(255,255,255,0.02);
-    border: none;
-    cursor: pointer;
-    transition: var(--transition);
-    border-bottom: 2px solid transparent;
-  }
-  .tab-btn:hover { color: var(--text); }
-  .tab-btn.active {
-    color: var(--accent);
-    background: transparent;
-    border-bottom-color: var(--accent);
-  }
-  .tab-content {
-    display: none;
-    padding: 14px 16px;
-    flex-direction: column;
-    gap: 12px;
-    flex: 1;
-    overflow-y: auto;
-  }
-  .tab-content.active { display: flex; }
+  /* Card */
+  .card{background:var(--card);border:1px solid var(--card-border);border-radius:var(--radius);padding:12px;transition:var(--tr)}
+  .card-title{font-size:.62rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--text-dim);margin-bottom:8px}
 
-  /* ── Card ── */
-  .card {
-    background: var(--card);
-    border: 1px solid var(--card-border);
-    border-radius: var(--radius);
-    padding: 14px;
-    transition: var(--transition);
-  }
-  .card-title {
-    font-size: 0.65rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--text-dim);
-    margin-bottom: 10px;
-  }
+  /* Controls */
+  .cr{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+  .cr:last-child{margin-bottom:0}
+  .cl{font-size:.78rem;font-weight:500;min-width:72px}
+  .cl small{display:block;font-weight:400;font-size:.62rem;color:var(--text-dim)}
+  .cv{font-size:.73rem;font-weight:600;color:var(--accent);min-width:36px;text-align:right;font-variant-numeric:tabular-nums}
+  .sw{flex:1;margin:0 8px}
 
-  /* ── Controls ── */
-  .control-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 10px;
-  }
-  .control-row:last-child { margin-bottom: 0; }
-  .control-label {
-    font-size: 0.8rem;
-    font-weight: 500;
-    min-width: 75px;
-  }
-  .control-label small {
-    display: block;
-    font-weight: 400;
-    font-size: 0.65rem;
-    color: var(--text-dim);
-  }
-  .control-value {
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--accent);
-    min-width: 40px;
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-  }
+  input[type=range]{appearance:none;-webkit-appearance:none;width:100%;height:5px;border-radius:3px;background:var(--slider-track);outline:none;cursor:pointer}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent-glow);cursor:pointer}
+  input[type=number]{background:var(--card);border:1px solid var(--card-border);border-radius:7px;padding:5px 7px;color:var(--text);font-size:.78rem;font-family:'Inter',monospace;width:85px;outline:none;text-align:right;transition:var(--tr)}
+  input[type=number]:focus{border-color:var(--accent)}
+  input[type=text]{background:var(--card);border:1px solid var(--card-border);border-radius:7px;padding:5px 8px;color:var(--text);font-size:.78rem;font-family:'Inter',sans-serif;outline:none;flex:1;transition:var(--tr)}
+  input[type=text]:focus{border-color:var(--accent)}
 
-  .slider-wrap { flex: 1; margin: 0 10px; }
-  input[type=range] {
-    appearance: none;
-    -webkit-appearance: none;
-    width: 100%;
-    height: 5px;
-    border-radius: 3px;
-    background: var(--slider-track);
-    outline: none;
-    cursor: pointer;
-  }
-  input[type=range]::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    width: 16px; height: 16px;
-    border-radius: 50%;
-    background: var(--accent);
-    box-shadow: 0 0 8px var(--accent-glow);
-    cursor: pointer;
-    transition: transform 0.15s;
-  }
-  input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.15); }
+  /* Toggle */
+  .tw{display:flex;align-items:center;gap:7px;font-size:.68rem;color:var(--text-dim)}
+  .tg{position:relative;width:36px;height:20px;cursor:pointer}
+  .tg input{display:none}
+  .tg-tr{position:absolute;inset:0;border-radius:10px;background:var(--slider-track);transition:var(--tr)}
+  .tg-th{position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:var(--text-dim);transition:var(--tr)}
+  .tg input:checked~.tg-tr{background:var(--accent)}
+  .tg input:checked~.tg-th{left:19px;background:var(--text-bright)}
 
-  input[type=number] {
-    background: var(--card);
-    border: 1px solid var(--card-border);
-    border-radius: 8px;
-    padding: 6px 8px;
-    color: var(--text);
-    font-size: 0.8rem;
-    font-family: 'Inter', monospace;
-    width: 90px;
-    outline: none;
-    text-align: right;
-    transition: var(--transition);
-  }
-  input[type=number]:focus { border-color: var(--accent); }
+  /* Radio */
+  .rg{display:flex;gap:3px;background:rgba(255,255,255,.03);border-radius:7px;padding:3px}
+  .rb{flex:1;padding:5px 10px;border:none;border-radius:5px;font-family:'Inter',sans-serif;font-size:.73rem;font-weight:600;color:var(--text-dim);background:transparent;cursor:pointer;transition:var(--tr);text-align:center}
+  .rb.a{background:var(--accent);color:var(--bg);box-shadow:0 2px 8px var(--accent-glow)}
 
-  input[type=text] {
-    background: var(--card);
-    border: 1px solid var(--card-border);
-    border-radius: 8px;
-    padding: 6px 10px;
-    color: var(--text);
-    font-size: 0.8rem;
-    font-family: 'Inter', sans-serif;
-    outline: none;
-    flex: 1;
-    transition: var(--transition);
-  }
-  input[type=text]:focus { border-color: var(--accent); }
+  .qr{display:none;margin-top:8px;padding-top:8px;border-top:1px solid var(--card-border)}
+  .qr.show{display:block}
 
-  /* ── Toggle ── */
-  .toggle-wrap {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 0.7rem;
-    color: var(--text-dim);
-  }
-  .toggle {
-    position: relative;
-    width: 38px; height: 22px;
-    cursor: pointer;
-  }
-  .toggle input { display: none; }
-  .toggle-track {
-    position: absolute;
-    inset: 0;
-    border-radius: 11px;
-    background: var(--slider-track);
-    transition: var(--transition);
-  }
-  .toggle-thumb {
-    position: absolute;
-    top: 3px; left: 3px;
-    width: 16px; height: 16px;
-    border-radius: 50%;
-    background: var(--text-dim);
-    transition: var(--transition);
-  }
-  .toggle input:checked ~ .toggle-track { background: var(--accent); }
-  .toggle input:checked ~ .toggle-thumb { left: 19px; background: var(--text-bright); }
+  /* Buttons */
+  .br{display:flex;gap:6px}
+  .btn{flex:1;display:flex;align-items:center;justify-content:center;gap:4px;padding:10px 10px;border-radius:9px;border:1px solid transparent;font-family:'Inter',sans-serif;font-size:.75rem;font-weight:600;cursor:pointer;transition:var(--tr)}
+  .btn:active{transform:scale(.97)}
+  .btn-cap{background:linear-gradient(135deg,var(--success),#22c55e);color:#0c0e14;box-shadow:0 3px 14px var(--success-glow)}
+  .btn-test{background:linear-gradient(135deg,var(--warn),#f59e0b);color:#0c0e14}
+  .btn-rst{background:transparent;border:1px solid var(--danger);color:var(--danger)}
+  .btn-rst:hover{background:rgba(255,92,108,.1)}
+  .btn-sav{background:transparent;border:1px solid var(--accent);color:var(--accent)}
+  .btn-sav:hover{background:rgba(108,140,255,.1)}
+  .btn-sm{padding:4px 8px;font-size:.66rem;border-radius:5px;flex:0}
+  .btn-x{padding:2px 6px;font-size:.6rem;border-radius:4px;flex:0;background:transparent;border:1px solid var(--danger);color:var(--danger);cursor:pointer;font-family:'Inter',sans-serif;transition:var(--tr)}
 
-  /* ── Radio group ── */
-  .radio-group {
-    display: flex;
-    gap: 4px;
-    background: rgba(255,255,255,0.03);
-    border-radius: 8px;
-    padding: 3px;
-  }
-  .radio-btn {
-    flex: 1;
-    padding: 6px 12px;
-    border: none;
-    border-radius: 6px;
-    font-family: 'Inter', sans-serif;
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--text-dim);
-    background: transparent;
-    cursor: pointer;
-    transition: var(--transition);
-    text-align: center;
-  }
-  .radio-btn.active {
-    background: var(--accent);
-    color: var(--bg);
-    box-shadow: 0 2px 8px var(--accent-glow);
-  }
+  .info{font-size:.68rem;color:var(--text-dim);background:rgba(108,140,255,.06);border:1px solid rgba(108,140,255,.15);border-radius:7px;padding:7px 9px;line-height:1.4}
 
-  /* ── JPEG quality row ── */
-  .quality-row {
-    display: none;
-    margin-top: 8px;
-    padding-top: 8px;
-    border-top: 1px solid var(--card-border);
-  }
-  .quality-row.show { display: block; }
+  /* Toast */
+  .toast-c{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:100;display:flex;flex-direction:column;align-items:center;gap:5px;pointer-events:none}
+  .toast{background:rgba(30,33,45,.95);border:1px solid var(--card-border);border-radius:9px;padding:7px 14px;font-size:.73rem;backdrop-filter:blur(12px);animation:ti .3s ease-out,to .3s 2.2s ease-in forwards;pointer-events:auto}
+  .toast.s{border-color:var(--success);color:var(--success)}
+  .toast.e{border-color:var(--danger);color:var(--danger)}
+  .toast.i{border-color:var(--accent);color:var(--accent)}
+  @keyframes ti{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes to{from{opacity:1}to{opacity:0}}
 
-  /* ── Buttons ── */
-  .btn-row {
-    display: flex;
-    gap: 8px;
-  }
-  .btn {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
-    padding: 11px 12px;
-    border-radius: 10px;
-    border: 1px solid transparent;
-    font-family: 'Inter', sans-serif;
-    font-size: 0.78rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: var(--transition);
-  }
-  .btn:active { transform: scale(0.97); }
-  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .preset-list{display:flex;flex-direction:column;gap:5px;max-height:160px;overflow-y:auto}
+  .pi{display:flex;align-items:center;justify-content:space-between;padding:5px 8px;background:rgba(255,255,255,.03);border-radius:6px;font-size:.73rem;transition:var(--tr)}
+  .pi:hover{background:rgba(108,140,255,.08)}
+  .pi .pn{font-weight:500;flex:1;cursor:pointer}
 
-  .btn-capture {
-    background: linear-gradient(135deg, var(--success), #22c55e);
-    color: #0c0e14;
-    box-shadow: 0 3px 16px var(--success-glow);
-  }
-  .btn-capture:hover:not(:disabled) { box-shadow: 0 3px 24px rgba(61,220,132,0.4); }
+  .ssl{padding:8px 12px;background:rgba(255,255,255,.02);border-top:1px solid var(--card-border);font-size:.66rem;color:var(--text-dim)}
+  .ssl a{color:var(--accent);text-decoration:none}
 
-  .btn-test {
-    background: linear-gradient(135deg, var(--warn), #f59e0b);
-    color: #0c0e14;
-  }
-
-  .btn-reset {
-    background: transparent;
-    border: 1px solid var(--danger);
-    color: var(--danger);
-  }
-  .btn-reset:hover { background: rgba(255,92,108,0.1); }
-
-  .btn-save {
-    background: transparent;
-    border: 1px solid var(--accent);
-    color: var(--accent);
-  }
-  .btn-save:hover { background: rgba(108,140,255,0.1); }
-
-  .btn-sm {
-    padding: 5px 10px;
-    font-size: 0.68rem;
-    border-radius: 6px;
-    flex: 0;
-  }
-
-  .btn-danger-sm {
-    padding: 3px 8px;
-    font-size: 0.62rem;
-    border-radius: 4px;
-    flex: 0;
-    background: transparent;
-    border: 1px solid var(--danger);
-    color: var(--danger);
-    cursor: pointer;
-    font-family: 'Inter', sans-serif;
-    transition: var(--transition);
-  }
-  .btn-danger-sm:hover { background: rgba(255,92,108,0.15); }
-
-  /* ── Info box ── */
-  .info-box {
-    font-size: 0.7rem;
-    color: var(--text-dim);
-    background: rgba(108,140,255,0.06);
-    border: 1px solid rgba(108,140,255,0.15);
-    border-radius: 8px;
-    padding: 8px 10px;
-    line-height: 1.4;
-  }
-
-  /* ── Toast ── */
-  .toast-container {
-    position: fixed;
-    bottom: 20px; left: 50%;
-    transform: translateX(-50%);
-    z-index: 100;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 6px;
-    pointer-events: none;
-  }
-  .toast {
-    background: rgba(30,33,45,0.95);
-    border: 1px solid var(--card-border);
-    border-radius: 10px;
-    padding: 8px 16px;
-    font-size: 0.75rem;
-    backdrop-filter: blur(12px);
-    animation: toastIn 0.3s ease-out, toastOut 0.3s 2.2s ease-in forwards;
-    pointer-events: auto;
-  }
-  .toast.success { border-color: var(--success); color: var(--success); }
-  .toast.error { border-color: var(--danger); color: var(--danger); }
-  .toast.info { border-color: var(--accent); color: var(--accent); }
-  @keyframes toastIn { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
-  @keyframes toastOut { from { opacity:1; } to { opacity:0; } }
-
-  /* ── Preset list ── */
-  .preset-list {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    max-height: 180px;
-    overflow-y: auto;
-  }
-  .preset-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 6px 10px;
-    background: rgba(255,255,255,0.03);
-    border-radius: 8px;
-    font-size: 0.75rem;
-    transition: var(--transition);
-  }
-  .preset-item:hover { background: rgba(108,140,255,0.08); }
-  .preset-item .name { font-weight: 500; flex: 1; cursor: pointer; }
-
-  /* ── SSL section ── */
-  .ssl-section {
-    padding: 10px 14px;
-    background: rgba(255,255,255,0.02);
-    border-top: 1px solid var(--card-border);
-    font-size: 0.68rem;
-    color: var(--text-dim);
-  }
-  .ssl-section a { color: var(--accent); text-decoration: none; }
-
-  /* ── Responsive ── */
-  @media (max-width: 768px) {
-    .app { flex-direction: column; }
-    .video-panel { min-height: 280px; }
-    .controls-panel {
-      width: 100%;
-      border-left: none;
-      border-top: 1px solid var(--card-border);
-      max-height: 60vh;
-    }
+  @media(max-width:768px){
+    .app{flex-direction:column}
+    .video-panel{min-height:260px}
+    .controls-panel{width:100%;border-left:none;border-top:1px solid var(--card-border);max-height:60vh}
   }
 </style>
 </head>
@@ -528,592 +142,451 @@
 
 <div class="app">
 
-  <!-- ═══ Video Panel ═══ -->
+  <!-- ═══ Video ═══ -->
   <div class="video-panel">
     <div class="video-overlay">
       <span class="dot" id="liveDot"></span>
-      <span id="liveLabel">UVC Bağlanıyor…</span>
+      <span id="liveLabel">Bağlanıyor…</span>
     </div>
-
-    <video id="videoPreview" autoplay playsinline muted></video>
-
-    <div class="no-video" id="noVideoMsg">
-      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+    <video id="vid" autoplay playsinline muted></video>
+    <div class="no-video" id="noVid">
+      <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
       <p>UVC Kamera Bekleniyor</p>
     </div>
-
-    <!-- Test capture preview overlay -->
-    <div class="test-preview" id="testPreview">
-      <button class="close-btn" onclick="closeTestPreview()">✕</button>
-      <img id="testPreviewImg" src="" alt="Test capture">
+    <div class="test-preview" id="tp">
+      <button class="x" onclick="$('tp').classList.remove('show')">✕</button>
+      <img id="tpImg" src="" alt="Test">
     </div>
   </div>
 
-  <!-- ═══ Controls Panel ═══ -->
+  <!-- ═══ Controls ═══ -->
   <div class="controls-panel">
-
     <div class="panel-header">
       <h1>🔬 PiCam</h1>
-      <div class="conn-status" id="connStatus">
-        <span class="conn-dot"></span>
-        <span id="connLabel">…</span>
-      </div>
+      <div class="conn-status" id="cs"><span class="conn-dot"></span><span id="cl">…</span></div>
     </div>
 
-    <!-- ─── Tab Bar ─── -->
     <div class="tab-bar">
-      <button class="tab-btn active" id="tabBtnVideo" onclick="switchTab('video')">
-        🎥 Görüntü
-      </button>
-      <button class="tab-btn" id="tabBtnCapture" onclick="switchTab('capture')">
-        📷 Çekim
-      </button>
+      <button class="tab-btn active" id="t1b" onclick="tab(1)">🖥️ Ana Ekran</button>
+      <button class="tab-btn" id="t2b" onclick="tab(2)">⚙️ Ayarlar</button>
     </div>
 
-    <!-- ═══════════════════════════════════════════
-         GÖRÜNTÜ TAB — Sadece görüntü işleme
-         (brightness, contrast, saturation, sharpness)
-    ═══════════════════════════════════════════ -->
-    <div class="tab-content active" id="tabVideo">
+    <!-- ═══ TAB 1: ANA EKRAN ═══ -->
+    <div class="tab-content active" id="t1">
 
-      <div class="info-box">
-        💡 Bu ayarlar vizördeki görüntüyü gerçek zamanlı olarak değiştirir. Capture'ı etkilemez.
-      </div>
-
+      <!-- Görüntü İşleme -->
       <div class="card">
-        <div class="card-title">🎨 Görüntü İşleme</div>
+        <div class="card-title">🎨 Görüntü</div>
 
-        <div class="control-row">
-          <span class="control-label">Brightness</span>
-          <div class="slider-wrap">
-            <input type="range" id="slBrightness" min="-100" max="100" value="0">
-          </div>
-          <span class="control-value" id="dBrightness">0</span>
+        <div class="cr">
+          <span class="cl">Brightness</span>
+          <div class="sw"><input type="range" id="sBri" min="-100" max="100" value="0"></div>
+          <span class="cv" id="dBri">0</span>
         </div>
-
-        <div class="control-row">
-          <span class="control-label">Contrast</span>
-          <div class="slider-wrap">
-            <input type="range" id="slContrast" min="0" max="100" value="50">
-          </div>
-          <span class="control-value" id="dContrast">50</span>
+        <div class="cr">
+          <span class="cl">Contrast</span>
+          <div class="sw"><input type="range" id="sCon" min="0" max="100" value="50"></div>
+          <span class="cv" id="dCon">50</span>
         </div>
-
-        <div class="control-row">
-          <span class="control-label">Saturation</span>
-          <div class="slider-wrap">
-            <input type="range" id="slSaturation" min="0" max="100" value="50">
-          </div>
-          <span class="control-value" id="dSaturation">50</span>
+        <div class="cr">
+          <span class="cl">Saturation</span>
+          <div class="sw"><input type="range" id="sSat" min="0" max="100" value="50"></div>
+          <span class="cv" id="dSat">50</span>
         </div>
-
-        <div class="control-row">
-          <span class="control-label">Sharpness</span>
-          <div class="slider-wrap">
-            <input type="range" id="slSharpness" min="0" max="100" value="50">
-          </div>
-          <span class="control-value" id="dSharpness">50</span>
+        <div class="cr">
+          <span class="cl">Sharpness</span>
+          <div class="sw"><input type="range" id="sSha" min="0" max="100" value="50"></div>
+          <span class="cv" id="dSha">50</span>
         </div>
       </div>
 
-      <div class="btn-row">
-        <button class="btn btn-reset" onclick="resetImageProcessing()">
-          🔄 Görüntü Sıfırla
-        </button>
+      <!-- Capture -->
+      <div class="card">
+        <div class="card-title">📷 Çekim</div>
+        <div class="cr">
+          <span class="cl">Format</span>
+          <div class="rg">
+            <button class="rb a" id="fD" onclick="setFmt('dng')">DNG</button>
+            <button class="rb" id="fJ" onclick="setFmt('jpeg')">JPEG</button>
+          </div>
+        </div>
+        <div class="qr" id="qR">
+          <div class="cr">
+            <span class="cl">Kalite</span>
+            <div class="sw"><input type="range" id="sQua" min="1" max="100" value="90"></div>
+            <span class="cv" id="dQua">90</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="br">
+        <button class="btn btn-test" onclick="testCap()">🔍 Test</button>
+        <button class="btn btn-cap" onclick="capture()">📷 Capture</button>
+      </div>
+
+      <div class="br">
+        <button class="btn btn-rst" onclick="resetImg()">🔄 Görüntü Sıfırla</button>
       </div>
     </div>
 
-    <!-- ═══════════════════════════════════════════
-         ÇEKİM TAB — Exposure, Gain, Format
-         Ayarlar vizöre ANINDA yansır
-    ═══════════════════════════════════════════ -->
-    <div class="tab-content" id="tabCapture">
+    <!-- ═══ TAB 2: AYARLAR ═══ -->
+    <div class="tab-content" id="t2">
 
-      <div class="info-box">
-        📷 Exposure ve Gain vizörde canlı önizlenir. Beğendiğinde "Capture" ile çek, "Kaydet" ile profili sakla.
+      <div class="info">
+        ⏱️ Exposure ve Gain vizöre canlı yansır. Auto→Manuel geçişinde mevcut değerler korunur.
       </div>
 
-      <!-- ─── Exposure ─── -->
+      <!-- Exposure -->
       <div class="card">
-        <div class="card-title">⏱️ Pozlama (Exposure)</div>
-
-        <div class="control-row">
-          <span class="control-label">Mod</span>
-          <div class="toggle-wrap">
+        <div class="card-title">⏱️ Pozlama</div>
+        <div class="cr">
+          <span class="cl">Mod</span>
+          <div class="tw">
             <span>Auto</span>
-            <label class="toggle">
-              <input type="checkbox" id="expManual" onchange="onExposureToggle()">
-              <span class="toggle-track"></span>
-              <span class="toggle-thumb"></span>
+            <label class="tg">
+              <input type="checkbox" id="expM" onchange="onExpToggle()">
+              <span class="tg-tr"></span>
+              <span class="tg-th"></span>
             </label>
             <span>Manuel</span>
           </div>
         </div>
-
-        <div class="control-row" id="expRow" style="opacity:0.35; pointer-events:none">
-          <span class="control-label">Süre <small>µs</small></span>
-          <input type="number" id="expValue" value="20000" min="100" max="5000000" step="500">
+        <div class="cr" id="expR" style="opacity:.35;pointer-events:none">
+          <span class="cl">Süre <small>µs</small></span>
+          <input type="number" id="expV" value="20000" min="100" max="5000000" step="500">
+        </div>
+        <div style="font-size:.62rem;color:var(--text-dim);margin-top:2px">
+          Anlık: <span id="curExp">—</span> µs
         </div>
       </div>
 
-      <!-- ─── Gain ─── -->
+      <!-- Gain -->
       <div class="card">
         <div class="card-title">📈 Kazanç (Gain)</div>
-
-        <div class="control-row">
-          <span class="control-label">Gain</span>
-          <div class="slider-wrap">
-            <input type="range" id="slGain" min="0" max="16" step="0.1" value="0">
-          </div>
-          <span class="control-value" id="dGain">Auto</span>
+        <div class="cr">
+          <span class="cl">Gain</span>
+          <div class="sw"><input type="range" id="sGain" min="0" max="16" step="0.1" value="0"></div>
+          <span class="cv" id="dGain">Auto</span>
         </div>
-
-        <div style="font-size:0.65rem; color:var(--text-dim); margin-top:4px">
-          0 = Otomatik  ·  1.0–16.0 = Manuel kazanç
+        <div style="font-size:.62rem;color:var(--text-dim);margin-top:2px">
+          0 = Otomatik · Anlık: <span id="curGain">—</span>
         </div>
       </div>
 
-      <!-- ─── Format ─── -->
+      <!-- Profil Kaydet / Sıfırla -->
+      <div class="br">
+        <button class="btn btn-sav" onclick="saveProf()">💾 Profili Kaydet</button>
+        <button class="btn btn-rst" onclick="resetProf()">🔄 Default</button>
+      </div>
+
+      <!-- Profiller -->
       <div class="card">
-        <div class="card-title">📁 Çıktı Formatı</div>
-
-        <div class="control-row">
-          <span class="control-label">Format</span>
-          <div class="radio-group">
-            <button class="radio-btn active" id="fmtDng" onclick="setFormat('dng')">DNG (RAW)</button>
-            <button class="radio-btn" id="fmtJpeg" onclick="setFormat('jpeg')">JPEG</button>
-          </div>
-        </div>
-
-        <div class="quality-row" id="qualityRow">
-          <div class="control-row">
-            <span class="control-label">Kalite</span>
-            <div class="slider-wrap">
-              <input type="range" id="slQuality" min="1" max="100" value="90">
-            </div>
-            <span class="control-value" id="dQuality">90</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- ─── Actions ─── -->
-      <div class="btn-row">
-        <button class="btn btn-test" onclick="testCapture()">
-          🔍 Test
-        </button>
-        <button class="btn btn-capture" onclick="captureStill()">
-          📷 Capture
-        </button>
-      </div>
-
-      <div class="btn-row">
-        <button class="btn btn-save" onclick="saveProfile()">
-          💾 Profili Kaydet
-        </button>
-        <button class="btn btn-reset" onclick="resetProfile()">
-          🔄 Default
-        </button>
-      </div>
-
-      <!-- ─── Profiller ─── -->
-      <div class="card">
-        <div class="card-title">⚡ Kayıtlı Profiller</div>
-        <div class="preset-list" id="presetList"></div>
-        <div style="display:flex; gap:6px; margin-top:10px">
-          <input type="text" id="presetName" placeholder="Profil adı…">
-          <button class="btn btn-sm btn-save" onclick="savePreset()">+</button>
+        <div class="card-title">⚡ Profiller</div>
+        <div class="preset-list" id="pList"></div>
+        <div style="display:flex;gap:5px;margin-top:8px">
+          <input type="text" id="pName" placeholder="Profil adı…">
+          <button class="btn btn-sm btn-sav" onclick="savePre()">+</button>
         </div>
       </div>
     </div>
 
-    <!-- ─── SSL ─── -->
-    <div class="ssl-section">
-      📜 <a href="/picam-ca.crt" download>SSL Sertifika İndir</a>
-    </div>
-
+    <div class="ssl">📜 <a href="/picam-ca.crt" download>SSL Sertifika İndir</a></div>
   </div>
 </div>
 
-<div class="toast-container" id="toastContainer"></div>
+<div class="toast-c" id="tc"></div>
 
 <script>
-/* ═══════════════════════════════════════════════════
- *  CONFIG
- * ═══════════════════════════════════════════════════ */
-const BASE_URL = (location.protocol === 'file:')
-  ? 'http://192.168.7.2:8080'
-  : '';
-
-const DEBOUNCE_MS = 300;
+const B = (location.protocol==='file:') ? 'http://192.168.7.2:8080' : '';
+const D = 300;
 const $ = id => document.getElementById(id);
+let fmt = 'dng';
 
-let captureFormat = 'dng';
-
-/* ═══════════════════════════════════════════════════
- *  TAB SWITCHING
- * ═══════════════════════════════════════════════════ */
-function switchTab(tab) {
-  $('tabBtnVideo').classList.toggle('active', tab === 'video');
-  $('tabBtnCapture').classList.toggle('active', tab === 'capture');
-  $('tabVideo').classList.toggle('active', tab === 'video');
-  $('tabCapture').classList.toggle('active', tab === 'capture');
+/* ── Tabs ── */
+function tab(n) {
+  $('t1b').classList.toggle('active', n===1);
+  $('t2b').classList.toggle('active', n===2);
+  $('t1').classList.toggle('active', n===1);
+  $('t2').classList.toggle('active', n===2);
 }
 
-/* ═══════════════════════════════════════════════════
- *  UVC VIDEO
- * ═══════════════════════════════════════════════════ */
-async function initVideo() {
+/* ── Video ── */
+async function initVid() {
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { width: { ideal: 1920 }, height: { ideal: 1080 } },
-      audio: false
-    });
-    $('videoPreview').srcObject = stream;
-    $('videoPreview').style.display = 'block';
-    $('noVideoMsg').style.display = 'none';
-    $('liveDot').classList.add('connected');
+    const s = await navigator.mediaDevices.getUserMedia({video:{width:{ideal:1920},height:{ideal:1080}},audio:false});
+    $('vid').srcObject = s;
+    $('vid').style.display = 'block';
+    $('noVid').style.display = 'none';
+    $('liveDot').classList.add('ok');
     $('liveLabel').textContent = 'LIVE';
-  } catch (err) {
-    $('videoPreview').style.display = 'none';
-    $('noVideoMsg').style.display = 'block';
-    $('liveLabel').textContent = 'Kamera bulunamadı';
+  } catch(e) {
+    $('vid').style.display = 'none';
+    $('noVid').style.display = 'block';
+    $('liveLabel').textContent = 'Kamera yok';
   }
 }
 
-/* ═══════════════════════════════════════════════════
- *  CONNECTION CHECK
- * ═══════════════════════════════════════════════════ */
-async function checkConnection() {
+/* ── Conn check ── */
+async function chkConn() {
   try {
-    const ctrl = new AbortController();
-    setTimeout(() => ctrl.abort(), 4000);
-    // Basit bir GET — sadece bağlantı testi
-    await fetch(`${BASE_URL}/reset_controls`, { signal: ctrl.signal });
-    $('connStatus').className = 'conn-status ok';
-    $('connLabel').textContent = 'Bağlı';
+    const c = new AbortController();
+    setTimeout(() => c.abort(), 4000);
+    await fetch(`${B}/camera_status`, {signal:c.signal});
+    $('cs').className = 'conn-status ok';
+    $('cl').textContent = 'Bağlı';
   } catch {
-    $('connStatus').className = 'conn-status error';
-    $('connLabel').textContent = 'Bağlantı yok';
+    $('cs').className = 'conn-status err';
+    $('cl').textContent = 'Offline';
   }
 }
 
-/* ═══════════════════════════════════════════════════
- *  SEND ALL CONTROLS TO /video_controls
- *
- *  Tek bir endpoint — hem görüntü işleme hem
- *  exposure/gain parametreleri gönderilir.
- *  Vizör her zaman gerçek durumu gösterir.
- * ═══════════════════════════════════════════════════ */
-function buildAllParams() {
+/* ── Send ALL controls to /video_controls ── */
+function buildParams() {
   const p = new URLSearchParams();
-
-  // ── Görüntü işleme ──
-  p.set('brightness', $('slBrightness').value);
-  p.set('contrast', $('slContrast').value);
-  p.set('saturation', $('slSaturation').value);
-  p.set('sharpness', $('slSharpness').value);
-
-  // ── Exposure ──
-  if ($('expManual').checked) {
-    const us = parseInt($('expValue').value) || 0;
-    if (us > 0) p.set('exposure', us);
+  p.set('brightness', $('sBri').value);
+  p.set('contrast', $('sCon').value);
+  p.set('saturation', $('sSat').value);
+  p.set('sharpness', $('sSha').value);
+  if ($('expM').checked) {
+    const v = parseInt($('expV').value) || 0;
+    if (v > 0) p.set('exposure', v);
   }
-  // exposure gönderilmezse → AE auto
-
-  // ── Gain ──
-  const gain = parseFloat($('slGain').value);
-  if (gain > 0) p.set('gain', gain);
-  // gain=0 → AG auto
-
+  const g = parseFloat($('sGain').value);
+  if (g > 0) p.set('gain', g);
   return p.toString();
 }
 
-let applyTimer = null;
-let applyBusy = false;
+let at = null, busy = false;
+function sched() { clearTimeout(at); at = setTimeout(apply, D); }
 
-function scheduleApply() {
-  clearTimeout(applyTimer);
-  applyTimer = setTimeout(applyAll, DEBOUNCE_MS);
-}
-
-async function applyAll() {
-  if (applyBusy) return;
-  applyBusy = true;
+async function apply() {
+  if (busy) return;
+  busy = true;
   try {
-    const url = `${BASE_URL}/video_controls?${buildAllParams()}`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(res.status);
-  } catch (err) {
-    console.warn('video_controls hata:', err);
-  } finally {
-    applyBusy = false;
+    await fetch(`${B}/video_controls?${buildParams()}`);
+  } catch(e) {
+    console.warn('apply err:', e);
+  } finally { busy = false; }
+}
+
+/* ── Camera status polling ── */
+async function pollStatus() {
+  try {
+    const r = await fetch(`${B}/camera_status`);
+    if (!r.ok) return;
+    const j = await r.json();
+    $('curExp').textContent = j.exposure_us || '—';
+    $('curGain').textContent = j.gain ? j.gain.toFixed(2) : '—';
+  } catch {}
+}
+
+/* ── Exposure toggle ── */
+async function onExpToggle() {
+  const on = $('expM').checked;
+  $('expR').style.opacity = on ? '1' : '.35';
+  $('expR').style.pointerEvents = on ? 'auto' : 'none';
+
+  if (on) {
+    // Auto→Manual: mevcut auto değerini oku
+    try {
+      const r = await fetch(`${B}/camera_status`);
+      if (r.ok) {
+        const j = await r.json();
+        if (j.exposure_us > 0) $('expV').value = j.exposure_us;
+        if (j.gain > 0) { $('sGain').value = j.gain; $('dGain').textContent = j.gain.toFixed(1); }
+      }
+    } catch {}
   }
+  sched();
 }
 
-/* ═══════════════════════════════════════════════════
- *  GÖRÜNTÜ İŞLEME SIFIRLAMA
- * ═══════════════════════════════════════════════════ */
-function resetImageProcessing() {
-  $('slBrightness').value = 0;  $('dBrightness').textContent = '0';
-  $('slContrast').value = 50;   $('dContrast').textContent = '50';
-  $('slSaturation').value = 50; $('dSaturation').textContent = '50';
-  $('slSharpness').value = 50;  $('dSharpness').textContent = '50';
-  applyAll();
-  toast('Görüntü ayarları sıfırlandı', 'success');
+/* ── Format ── */
+function setFmt(f) {
+  fmt = f;
+  $('fD').classList.toggle('a', f==='dng');
+  $('fJ').classList.toggle('a', f==='jpeg');
+  $('qR').classList.toggle('show', f==='jpeg');
 }
 
-/* ═══════════════════════════════════════════════════
- *  EXPOSURE TOGGLE
- * ═══════════════════════════════════════════════════ */
-function onExposureToggle() {
-  const on = $('expManual').checked;
-  $('expRow').style.opacity = on ? '1' : '0.35';
-  $('expRow').style.pointerEvents = on ? 'auto' : 'none';
-  scheduleApply(); // Vizöre hemen yansıt
-}
-
-/* ═══════════════════════════════════════════════════
- *  FORMAT SEÇİMİ
- * ═══════════════════════════════════════════════════ */
-function setFormat(fmt) {
-  captureFormat = fmt;
-  $('fmtDng').classList.toggle('active', fmt === 'dng');
-  $('fmtJpeg').classList.toggle('active', fmt === 'jpeg');
-  $('qualityRow').classList.toggle('show', fmt === 'jpeg');
-}
-
-/* ═══════════════════════════════════════════════════
- *  CAPTURE
- * ═══════════════════════════════════════════════════ */
-function buildCaptureParams() {
+/* ── Capture ── */
+function buildCapParams() {
   const p = new URLSearchParams();
-
-  if ($('expManual').checked) {
-    const us = parseInt($('expValue').value) || 0;
-    if (us > 0) p.set('exposure', us);
+  if ($('expM').checked) {
+    const v = parseInt($('expV').value) || 0;
+    if (v > 0) p.set('exposure', v);
   }
-  const gain = parseFloat($('slGain').value);
-  if (gain > 0) p.set('gain', gain);
-
-  p.set('format', captureFormat);
-  if (captureFormat === 'jpeg')
-    p.set('quality', $('slQuality').value);
-
+  const g = parseFloat($('sGain').value);
+  if (g > 0) p.set('gain', g);
+  p.set('format', fmt);
+  if (fmt === 'jpeg') p.set('quality', $('sQua').value);
   return p.toString();
 }
 
-async function captureStill() {
-  toast('Capture…', 'info');
+async function capture() {
+  toast('Capture…', 'i');
   try {
-    const res = await fetch(`${BASE_URL}/capture?${buildCaptureParams()}`);
-    if (!res.ok) throw new Error(res.statusText);
-    const blob = await res.blob();
-    if (blob.size > 0) {
-      const ext = captureFormat === 'jpeg' ? 'jpg' : 'dng';
+    const r = await fetch(`${B}/capture?${buildCapParams()}`);
+    if (!r.ok) throw new Error(r.statusText);
+    const b = await r.blob();
+    if (b.size > 0) {
+      const ext = fmt === 'jpeg' ? 'jpg' : 'dng';
       const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
+      a.href = URL.createObjectURL(b);
       a.download = `capture_${Date.now()}.${ext}`;
       a.click();
       URL.revokeObjectURL(a.href);
-      toast(`${ext.toUpperCase()} indirildi (${(blob.size/1024/1024).toFixed(1)} MB)`, 'success');
+      toast(`${ext.toUpperCase()} indirildi (${(b.size/1024/1024).toFixed(1)}MB)`, 's');
     }
-  } catch (err) {
-    toast('Capture hatası: ' + err.message, 'error');
-  }
+  } catch(e) { toast('Capture hatası: '+e.message, 'e'); }
 }
 
-/* ═══════════════════════════════════════════════════
- *  TEST CAPTURE
- * ═══════════════════════════════════════════════════ */
-async function testCapture() {
-  toast('Test çekimi…', 'info');
+/* ── Test ── */
+async function testCap() {
+  toast('Test çekimi…', 'i');
   try {
-    const res = await fetch(`${BASE_URL}/test_capture`);
-    if (!res.ok) throw new Error(res.status);
-    const blob = await res.blob();
-    $('testPreviewImg').src = URL.createObjectURL(blob);
-    $('testPreview').classList.add('show');
-    toast('Test OK ✓', 'success');
-  } catch (err) {
-    toast('Test hatası: ' + err.message, 'error');
-  }
+    const r = await fetch(`${B}/test_capture`);
+    if (!r.ok) throw new Error(r.status);
+    const b = await r.blob();
+    $('tpImg').src = URL.createObjectURL(b);
+    $('tp').classList.add('show');
+    toast('Test OK ✓', 's');
+  } catch(e) { toast('Test hatası: '+e.message, 'e'); }
 }
 
-function closeTestPreview() {
-  $('testPreview').classList.remove('show');
+/* ── Reset image processing ── */
+function resetImg() {
+  $('sBri').value=0;  $('dBri').textContent='0';
+  $('sCon').value=50; $('dCon').textContent='50';
+  $('sSat').value=50; $('dSat').textContent='50';
+  $('sSha').value=50; $('dSha').textContent='50';
+  apply();
+  toast('Görüntü sıfırlandı', 's');
 }
 
-/* ═══════════════════════════════════════════════════
- *  PROFİL KAYDET / YÜKLE / SIFIRLA  (sunucuya)
- * ═══════════════════════════════════════════════════ */
-async function saveProfile() {
+/* ── Profile save/load/reset (server) ── */
+async function saveProf() {
   try {
-    const res = await fetch(`${BASE_URL}/capture_controls?${buildCaptureParams()}`);
-    if (!res.ok) throw new Error(res.status);
-    toast('Profil kaydedildi ✓', 'success');
-  } catch (err) {
-    toast('Kayıt hatası: ' + err.message, 'error');
-  }
+    await fetch(`${B}/capture_controls?${buildCapParams()}`);
+    toast('Profil kaydedildi ✓', 's');
+  } catch(e) { toast('Kayıt hatası', 'e'); }
 }
 
-async function resetProfile() {
+async function resetProf() {
   try {
-    await fetch(`${BASE_URL}/capture_controls/reset`);
-    $('expManual').checked = false;
-    onExposureToggle();
-    $('expValue').value = 20000;
-    $('slGain').value = 0; $('dGain').textContent = 'Auto';
-    setFormat('dng');
-    $('slQuality').value = 90; $('dQuality').textContent = '90';
-    scheduleApply(); // Vizörü de sıfırla
-    toast('Profil sıfırlandı ✓', 'success');
-  } catch (err) {
-    toast('Reset hatası: ' + err.message, 'error');
-  }
+    await fetch(`${B}/capture_controls/reset`);
+    $('expM').checked = false;
+    onExpToggle();
+    $('sGain').value = 0; $('dGain').textContent = 'Auto';
+    setFmt('dng');
+    $('sQua').value = 90; $('dQua').textContent = '90';
+    toast('Default profil yüklendi ✓', 's');
+  } catch(e) { toast('Reset hatası', 'e'); }
 }
 
-async function loadProfile() {
+async function loadProf() {
   try {
-    const res = await fetch(`${BASE_URL}/capture_controls`);
-    if (!res.ok) return;
-    const p = await res.json();
-
+    const r = await fetch(`${B}/capture_controls`);
+    if (!r.ok) return;
+    const p = await r.json();
     if (p.exposure_us > 0) {
-      $('expManual').checked = true;
-      $('expValue').value = p.exposure_us;
+      $('expM').checked = true;
+      $('expV').value = p.exposure_us;
     } else {
-      $('expManual').checked = false;
+      $('expM').checked = false;
     }
-    onExposureToggle();
-
-    $('slGain').value = p.gain || 0;
+    $('expR').style.opacity = $('expM').checked ? '1' : '.35';
+    $('expR').style.pointerEvents = $('expM').checked ? 'auto' : 'none';
+    $('sGain').value = p.gain || 0;
     $('dGain').textContent = p.gain > 0 ? parseFloat(p.gain).toFixed(1) : 'Auto';
-
-    setFormat(p.format === 'jpeg' ? 'jpeg' : 'dng');
-    if (p.jpeg_quality) { $('slQuality').value = p.jpeg_quality; $('dQuality').textContent = p.jpeg_quality; }
-
-    // Yüklenen exposure/gain'i vizöre de yansıt
-    scheduleApply();
-  } catch (err) {
-    console.warn('Profil yüklenemedi:', err);
-  }
+    setFmt(p.format === 'jpeg' ? 'jpeg' : 'dng');
+    if (p.jpeg_quality) { $('sQua').value = p.jpeg_quality; $('dQua').textContent = p.jpeg_quality; }
+    sched();
+  } catch(e) { console.warn('loadProf:', e); }
 }
 
-/* ═══════════════════════════════════════════════════
- *  YEREL PROFİLLER (localStorage)
- * ═══════════════════════════════════════════════════ */
-function getPresets() {
-  try { return JSON.parse(localStorage.getItem('picam_presets') || '[]'); }
-  catch { return []; }
-}
-function setPresets(p) { localStorage.setItem('picam_presets', JSON.stringify(p)); }
+/* ── Local presets (localStorage) ── */
+function getPre() { try { return JSON.parse(localStorage.getItem('pp')||'[]'); } catch { return []; } }
+function setPre(p) { localStorage.setItem('pp', JSON.stringify(p)); }
 
-function renderPresets() {
-  const list = $('presetList');
-  const presets = getPresets();
-  list.innerHTML = '';
-  presets.forEach((p, i) => {
+function renderPre() {
+  const l = $('pList'), ps = getPre();
+  l.innerHTML = '';
+  ps.forEach((p,i) => {
     const d = document.createElement('div');
-    d.className = 'preset-item';
-    d.innerHTML = `
-      <span class="name" onclick="loadPresetLocal(${i})">${p.name}</span>
-      <button class="btn-danger-sm" onclick="deletePreset(${i})">✕</button>`;
-    list.appendChild(d);
+    d.className = 'pi';
+    d.innerHTML = `<span class="pn" onclick="loadPre(${i})">${p.name}</span><button class="btn-x" onclick="delPre(${i})">✕</button>`;
+    l.appendChild(d);
   });
 }
 
-function savePreset() {
-  const name = $('presetName').value.trim();
-  if (!name) { toast('İsim girin', 'error'); return; }
-  const preset = {
-    name,
-    expManual: $('expManual').checked,
-    expValue: $('expValue').value,
-    gain: $('slGain').value,
-    format: captureFormat,
-    quality: $('slQuality').value,
-  };
-  const presets = getPresets();
-  presets.push(preset);
-  setPresets(presets);
-  renderPresets();
-  $('presetName').value = '';
-  toast(`"${name}" kaydedildi`, 'success');
+function savePre() {
+  const n = $('pName').value.trim();
+  if (!n) { toast('İsim girin', 'e'); return; }
+  const ps = getPre();
+  ps.push({ name:n, eM:$('expM').checked, eV:$('expV').value, g:$('sGain').value, f:fmt, q:$('sQua').value });
+  setPre(ps);
+  renderPre();
+  $('pName').value = '';
+  toast(`"${n}" kaydedildi`, 's');
 }
 
-function loadPresetLocal(idx) {
-  const p = getPresets()[idx];
-  if (!p) return;
-  $('expManual').checked = !!p.expManual;
-  $('expValue').value = p.expValue || 20000;
-  onExposureToggle();
-  $('slGain').value = p.gain || 0;
-  $('dGain').textContent = parseFloat(p.gain || 0) > 0 ? parseFloat(p.gain).toFixed(1) : 'Auto';
-  setFormat(p.format || 'dng');
-  $('slQuality').value = p.quality || 90;
-  $('dQuality').textContent = p.quality || '90';
-  scheduleApply(); // Vizöre yansıt
-  toast(`"${p.name}" yüklendi`, 'info');
+function loadPre(i) {
+  const p = getPre()[i]; if (!p) return;
+  $('expM').checked = !!p.eM;
+  $('expV').value = p.eV || 20000;
+  $('expR').style.opacity = $('expM').checked ? '1' : '.35';
+  $('expR').style.pointerEvents = $('expM').checked ? 'auto' : 'none';
+  $('sGain').value = p.g || 0;
+  $('dGain').textContent = parseFloat(p.g||0) > 0 ? parseFloat(p.g).toFixed(1) : 'Auto';
+  setFmt(p.f || 'dng');
+  $('sQua').value = p.q || 90;
+  $('dQua').textContent = p.q || '90';
+  sched();
+  toast(`"${p.name}" yüklendi`, 'i');
 }
 
-function deletePreset(idx) {
-  const presets = getPresets();
-  const name = presets[idx]?.name;
-  presets.splice(idx, 1);
-  setPresets(presets);
-  renderPresets();
-  toast(`"${name}" silindi`, 'info');
+function delPre(i) {
+  const ps = getPre(), n = ps[i]?.name;
+  ps.splice(i,1);
+  setPre(ps);
+  renderPre();
+  toast(`"${n}" silindi`, 'i');
 }
 
-/* ═══════════════════════════════════════════════════
- *  TOAST
- * ═══════════════════════════════════════════════════ */
-function toast(msg, type='success') {
-  const el = document.createElement('div');
-  el.className = `toast ${type}`;
-  el.textContent = msg;
-  $('toastContainer').appendChild(el);
-  setTimeout(() => el.remove(), 2800);
+/* ── Toast ── */
+function toast(m, t='s') {
+  const e = document.createElement('div');
+  e.className = `toast ${t}`;
+  e.textContent = m;
+  $('tc').appendChild(e);
+  setTimeout(() => e.remove(), 2800);
 }
 
-/* ═══════════════════════════════════════════════════
- *  EVENT LISTENERS
- * ═══════════════════════════════════════════════════ */
-
-// Görüntü işleme sliderları → vizöre hemen yansıt
-['slBrightness','slContrast','slSaturation','slSharpness'].forEach(id => {
+/* ── Events ── */
+['sBri','sCon','sSat','sSha'].forEach(id => {
   $(id).addEventListener('input', () => {
-    // Display güncelle
-    const d = id.replace('sl','d');
-    $(d).textContent = $(id).value;
-    scheduleApply();
+    $(id.replace('s','d')).textContent = $(id).value;
+    sched();
   });
 });
 
-// Gain slider → vizöre hemen yansıt
-$('slGain').addEventListener('input', () => {
-  const v = parseFloat($('slGain').value);
+$('sGain').addEventListener('input', () => {
+  const v = parseFloat($('sGain').value);
   $('dGain').textContent = v > 0 ? v.toFixed(1) : 'Auto';
-  scheduleApply();
+  sched();
 });
 
-// Exposure value → vizöre hemen yansıt
-$('expValue').addEventListener('change', scheduleApply);
+$('expV').addEventListener('change', sched);
+$('sQua').addEventListener('input', () => { $('dQua').textContent = $('sQua').value; });
 
-// Quality slider
-$('slQuality').addEventListener('input', () => {
-  $('dQuality').textContent = $('slQuality').value;
-});
-
-/* ═══════════════════════════════════════════════════
- *  INIT
- * ═══════════════════════════════════════════════════ */
-initVideo();
-checkConnection();
-loadProfile();
-renderPresets();
-setInterval(checkConnection, 15000);
+/* ── Init ── */
+initVid();
+chkConn();
+loadProf();
+renderPre();
+pollStatus();
+setInterval(chkConn, 15000);
+setInterval(pollStatus, 2000);
 </script>
-
 </body>
 </html>

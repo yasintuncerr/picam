@@ -48,6 +48,9 @@ extern int libcamera_reset_controls(struct video_source *s);
 extern int libcamera_capture_jpeg(struct video_source *s,
                                    void **out_buf, size_t *out_size,
                                    int quality);
+extern void libcamera_get_camera_status(struct video_source *s,
+                                         int64_t *out_exposure_us,
+                                         float *out_gain);
 #endif
 
 // Forward declarations
@@ -618,6 +621,30 @@ static void handle_test_capture(struct http_client_session *session)
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
+ * handle_camera_status() — /camera_status endpoint
+ *
+ * Kameradan anlık ölçülen exposure ve gain değerlerini döner.
+ * UI'da Auto→Manual geçişinde gerçek değerleri göstermek için kullanılır.
+ * ───────────────────────────────────────────────────────────────────────── */
+static void handle_camera_status(struct http_client_session *session)
+{
+#ifdef HAVE_LIBCAMERA
+    int64_t exp_us = 0;
+    float gain = 0.0f;
+    libcamera_get_camera_status(session->server->video_src, &exp_us, &gain);
+
+    char body[256];
+    snprintf(body, sizeof(body),
+        "{\"exposure_us\":%lld,\"gain\":%.2f}",
+        (long long)exp_us, gain);
+    send_json_response(session->fd, 200, "OK", body);
+#else
+    send_json_response(session->fd, 200, "OK",
+                       "{\"exposure_us\":20000,\"gain\":1.0}");
+#endif
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
  * client_thread_func() — Her HTTP client bağlantısı için thread
  * ───────────────────────────────────────────────────────────────────────── */
 static void *client_thread_func(void *arg) {
@@ -629,7 +656,10 @@ static void *client_thread_func(void *arg) {
     }
 
     /* ─── Route matching ─── */
-    if (strncmp(request_buf, "GET /capture_controls/reset", 27) == 0) {
+    if (strncmp(request_buf, "GET /camera_status", 18) == 0) {
+        handle_camera_status(session);
+    }
+    else if (strncmp(request_buf, "GET /capture_controls/reset", 27) == 0) {
         handle_capture_controls_reset(session);
     }
     else if (strncmp(request_buf, "GET /capture_controls", 21) == 0) {

@@ -66,6 +66,10 @@ struct libcamera_source {
 	bool restore_pending_ = false;
 	ControlList restore_controls_;
 	int pfds[2];
+
+	/* Current auto-computed values from last frame metadata */
+	int64_t current_exposure_us = 0;
+	float   current_gain = 0.0f;
 	
 	/* Video Stream resources */
 	struct {
@@ -374,6 +378,15 @@ static void libcamera_source_video_process(libcamera_source *src)
 
 	request = src->video.completed_requests.front();
 	src->video.completed_requests.pop();
+
+	/* Read current auto-exposure/gain from frame metadata */
+	const auto &metadata = request->metadata();
+	const auto *expVal = metadata.get(controls::ExposureTime);
+	if (expVal)
+		src->current_exposure_us = *expVal;
+	const auto *gainVal = metadata.get(controls::AnalogueGain);
+	if (gainVal)
+		src->current_gain = *gainVal;
 
 	/* We have only a single buffer per request, so just pick the first */
 	FrameBuffer *framebuf = request->buffers().begin()->second;
@@ -1235,4 +1248,19 @@ extern "C" int libcamera_capture_jpeg(struct video_source *s,
 	return src->video.encoder->EncodeBufferSync(yuv_mem, yuv_size,
 						    info, quality,
 						    out_buf, out_size);
+}
+
+/*
+ * libcamera_get_camera_status()
+ *
+ * Returns current auto-computed exposure (µs) and gain values
+ * from the latest video frame metadata.
+ */
+extern "C" void libcamera_get_camera_status(struct video_source *s,
+					    int64_t *out_exposure_us,
+					    float *out_gain)
+{
+	struct libcamera_source *src = to_libcamera_source(s, video_src);
+	if (out_exposure_us) *out_exposure_us = src->current_exposure_us;
+	if (out_gain)        *out_gain = src->current_gain;
 }
