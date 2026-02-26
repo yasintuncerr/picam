@@ -478,21 +478,36 @@ function resetImg() {
 }
 
 /* ── Profile save/load/reset ── */
+let activeProfileName = '';
+
 async function saveProf() {
-  const name = prompt('Profil adı girin:');
+  const name = prompt('Profil adı girin:', activeProfileName || '');
   if (!name || !name.trim()) { toast('İptal edildi', 'i'); return; }
-  const presets = getPresets();
-  presets.push({
-    name: name.trim(),
-    eM: $('expM').checked, eV: $('expV').value,
-    g: $('sGain').value, f: fmt, q: $('sQua').value,
-    bri: $('sBri').value, con: $('sCon').value,
-    sat: $('sSat').value, sha: $('sSha').value
-  });
-  savePresets(presets);
-  renderPresets();
-  try { await fetch(`${B}/capture_controls?${buildCapParams()}`); } catch {}
-  toast(`"${name.trim()}" kaydedildi ✓`, 's');
+  const trimmed = name.trim();
+
+  const p = new URLSearchParams();
+  p.set('name', trimmed);
+  if ($('expM').checked) { const v=parseInt($('expV').value)||0; if(v>0) p.set('exposure',v); }
+  const g = parseFloat($('sGain').value);
+  if (g > 0) p.set('gain', g);
+  p.set('format', fmt);
+  if (fmt==='jpeg') p.set('quality', $('sQua').value);
+  p.set('brightness', $('sBri').value);
+  p.set('contrast', $('sCon').value);
+  p.set('saturation', $('sSat').value);
+  p.set('sharpness', $('sSha').value);
+
+  try {
+    const r = await fetch(`${B}/profiles/save?${p.toString()}`);
+    const j = await r.json();
+    if (j.status === 'ok') {
+      activeProfileName = trimmed;
+      toast(`"${trimmed}" kaydedildi ✓`, 's');
+      await renderPresets();
+    } else {
+      toast(j.message || 'Kayıt hatası', 'e');
+    }
+  } catch(e) { toast('Kayıt hatası: ' + e.message, 'e'); }
 }
 
 async function resetProf() {
@@ -500,9 +515,26 @@ async function resetProf() {
     await fetch(`${B}/capture_controls/reset`);
     $('expM').checked=false; onExpToggle();
     $('sGain').value=0; $('dGain').textContent='Auto';
+    $('sBri').value=0; $('dBri').textContent='0';
+    $('sCon').value=50; $('dCon').textContent='50';
+    $('sSat').value=50; $('dSat').textContent='50';
+    $('sSha').value=50; $('dSha').textContent='50';
     setFmt('dng'); $('sQua').value=90; $('dQua').textContent='90';
+    activeProfileName = '';
+    await renderPresets();
     toast('Default yüklendi ✓', 's');
   } catch(e) { toast('Reset hatası', 'e'); }
+}
+
+function resetUIToDefaults() {
+  $('expM').checked=false; onExpToggle();
+  $('sGain').value=0; $('dGain').textContent='Auto';
+  $('sBri').value=0; $('dBri').textContent='0';
+  $('sCon').value=50; $('dCon').textContent='50';
+  $('sSat').value=50; $('dSat').textContent='50';
+  $('sSha').value=50; $('dSha').textContent='50';
+  setFmt('dng'); $('sQua').value=90; $('dQua').textContent='90';
+  activeProfileName = '';
 }
 
 async function loadProf() {
@@ -521,44 +553,68 @@ async function loadProf() {
   } catch(e) { console.warn('loadProf:', e); }
 }
 
-/* ── Presets (localStorage) ── */
-const PK = 'picam_presets_v2';
-function getPresets() { try { return JSON.parse(localStorage.getItem(PK)||'[]'); } catch { return []; } }
-function savePresets(a) { localStorage.setItem(PK, JSON.stringify(a)); }
-
-function renderPresets() {
-  const l=$('pList'), ps=getPresets();
+/* ── Server-backed profiles ── */
+async function renderPresets() {
+  const l=$('pList');
   l.innerHTML='';
-  $('pEmpty').style.display = ps.length===0?'block':'none';
-  ps.forEach((p,i) => {
-    const d=document.createElement('div'); d.className='pi';
-    const n=document.createElement('span'); n.className='pn'; n.textContent=p.name; n.onclick=()=>loadPreset(i);
-    const x=document.createElement('button'); x.className='btn-x'; x.textContent='✕'; x.onclick=e=>{e.stopPropagation();deletePreset(i);};
-    d.appendChild(n); d.appendChild(x); l.appendChild(d);
-  });
+  try {
+    const r = await fetch(`${B}/profiles`);
+    if (!r.ok) throw new Error(r.statusText);
+    const data = await r.json();
+    const ps = data.profiles || [];
+    if (data.active) activeProfileName = data.active;
+
+    $('pEmpty').style.display = ps.length===0?'block':'none';
+    ps.forEach(p => {
+      const d=document.createElement('div'); d.className='pi';
+      if (p.name === activeProfileName) d.style.borderLeft='3px solid var(--primary)';
+      const n=document.createElement('span'); n.className='pn'; n.textContent=p.name;
+      n.onclick=()=>applyPreset(p);
+      const x=document.createElement('button'); x.className='btn-x'; x.textContent='✕';
+      x.onclick=e=>{e.stopPropagation();deletePreset(p.name);};
+      d.appendChild(n); d.appendChild(x); l.appendChild(d);
+    });
+  } catch(e) {
+    $('pEmpty').style.display='block';
+    $('pEmpty').textContent='Profiller yüklenemedi';
+    console.warn('renderPresets:', e);
+  }
 }
 
-function loadPreset(i) {
-  const p=getPresets()[i]; if(!p) return;
-  $('expM').checked=!!p.eM; $('expV').value=p.eV||20000;
+async function applyPreset(p) {
+  if(p.exposure_us>0) { $('expM').checked=true; $('expV').value=p.exposure_us; } else { $('expM').checked=false; }
   $('expR').style.opacity=$('expM').checked?'1':'.35';
   $('expR').style.pointerEvents=$('expM').checked?'auto':'none';
-  $('sGain').value=p.g||0;
-  $('dGain').textContent=parseFloat(p.g||0)>0?parseFloat(p.g).toFixed(1):'Auto';
-  setFmt(p.f||'dng'); $('sQua').value=p.q||90; $('dQua').textContent=p.q||'90';
-  if(p.bri!==undefined){$('sBri').value=p.bri;$('dBri').textContent=p.bri;}
-  if(p.con!==undefined){$('sCon').value=p.con;$('dCon').textContent=p.con;}
-  if(p.sat!==undefined){$('sSat').value=p.sat;$('dSat').textContent=p.sat;}
-  if(p.sha!==undefined){$('sSha').value=p.sha;$('dSha').textContent=p.sha;}
+  $('sGain').value=p.gain||0;
+  $('dGain').textContent=parseFloat(p.gain||0)>0?parseFloat(p.gain).toFixed(1):'Auto';
+  setFmt(p.format==='jpeg'?'jpeg':'dng');
+  $('sQua').value=p.jpeg_quality||90; $('dQua').textContent=p.jpeg_quality||'90';
+  if(p.brightness!==undefined){$('sBri').value=p.brightness;$('dBri').textContent=p.brightness;}
+  if(p.contrast!==undefined){$('sCon').value=p.contrast;$('dCon').textContent=p.contrast;}
+  if(p.saturation!==undefined){$('sSat').value=p.saturation;$('dSat').textContent=p.saturation;}
+  if(p.sharpness!==undefined){$('sSha').value=p.sharpness;$('dSha').textContent=p.sharpness;}
   sched();
+
+  /* Tell server to make this profile active */
+  try { await fetch(`${B}/profiles/load?name=${encodeURIComponent(p.name)}`); } catch {}
+  activeProfileName = p.name;
+  await renderPresets();
   toast(`"${p.name}" yüklendi`, 'i');
 }
 
-function deletePreset(i) {
-  const ps=getPresets(), nm=ps[i]?.name||'?';
-  if(!confirm(`"${nm}" silinsin mi?`)) return;
-  ps.splice(i,1); savePresets(ps); renderPresets();
-  toast(`"${nm}" silindi`, 'i');
+async function deletePreset(name) {
+  if(!confirm(`"${name}" silinsin mi?`)) return;
+  try {
+    const r = await fetch(`${B}/profiles/delete?name=${encodeURIComponent(name)}`);
+    const j = await r.json();
+    if (j.reset) {
+      resetUIToDefaults();
+      toast(`Aktif profil silindi, varsayılanlara dönüldü`, 'i');
+    } else {
+      toast(`"${name}" silindi`, 'i');
+    }
+    await renderPresets();
+  } catch(e) { toast('Silme hatası: ' + e.message, 'e'); }
 }
 
 /* ── Toast ── */

@@ -17,6 +17,16 @@
 /* Default path for persistent capture profile */
 #define CAPTURE_PROFILE_PATH "/home/picam/.picam_capture_profile.json"
 
+/* Path for named profiles list */
+#define CAPTURE_PROFILES_PATH "/home/picam/.picam_profiles.json"
+#define MAX_PROFILES 20
+
+/* A named profile entry */
+typedef struct {
+    char name[64];
+    capture_controls_t controls;
+} named_profile_t;
+
 // Forward declarations
 struct http_server;
 struct video_source;
@@ -48,6 +58,11 @@ struct http_server {
     capture_controls_t  saved_capture_profile;
     bool                profile_loaded;
     pthread_mutex_t     profile_mtx;
+
+    /* Named profiles */
+    named_profile_t     profiles[MAX_PROFILES];
+    int                 profile_count;
+    char                active_profile_name[64];
 };
 
 /**
@@ -67,5 +82,9 @@ void http_capture_destroy(struct http_server *server);
 /* Profile persistence (JSON) */
 int  capture_profile_save(const capture_controls_t *cc, const char *path);
 int  capture_profile_load(capture_controls_t *cc, const char *path);
+
+/* Multi-profile persistence */
+int  profiles_save_all(const named_profile_t *profiles, int count, const char *path);
+int  profiles_load_all(named_profile_t *profiles, int *count, int max, const char *path);
 
 #endif /* __CAPTURE_H__ */
