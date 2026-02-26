@@ -200,9 +200,11 @@ case "$1" in
         echo "UVC Camera + NCM Ethernet" > configs/c.1/strings/0x409/configuration
     	echo "Creating functions..."
 
+        # NCM must be created BEFORE UVC — macOS enumerates composite
+        # gadget functions in order; NCM first ensures the network
+        # interface comes up immediately without requiring a UVC client.
+        create_ethernet_ncm configs/c.1 ncm.0
     	create_uvc configs/c.1 uvc.0
-    
-        create_ethernet_ncm configs/c.1 ncm.0	
     
         echo "OK"
 
