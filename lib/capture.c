@@ -420,14 +420,15 @@ static int extract_param_str(const char *request_line, const char *key, char *bu
     return 0;
 }
 
-int profiles_save_all(const named_profile_t *profiles, int count, const char *path)
+int profiles_save_all(const named_profile_t *profiles, int count, const char *path,
+                      const char *active_name)
 {
     FILE *f = fopen(path, "w");
     if (!f) {
         fprintf(stderr, "profiles_save_all: cannot open %s: %s\n", path, strerror(errno));
         return -1;
     }
-    fprintf(f, "[\n");
+    fprintf(f, "{\"active\":\"%s\",\"profiles\":[\n", active_name ? active_name : "");
     for (int i = 0; i < count; i++) {
         const capture_controls_t *cc = &profiles[i].controls;
         fprintf(f,
@@ -450,13 +451,15 @@ int profiles_save_all(const named_profile_t *profiles, int count, const char *pa
             (int)cc->format, cc->jpeg_quality,
             (i < count - 1) ? "," : "");
     }
-    fprintf(f, "]\n");
+    fprintf(f, "]}\n");
     fclose(f);
-    fprintf(stdout, "Profiles saved to %s (%d profiles)\n", path, count);
+    fprintf(stdout, "Profiles saved to %s (%d profiles, active=%s)\n", path, count,
+            active_name ? active_name : "(none)");
     return 0;
 }
 
-int profiles_load_all(named_profile_t *profiles, int *count, int max, const char *path)
+int profiles_load_all(named_profile_t *profiles, int *count, int max, const char *path,
+                      char *active_name, size_t active_name_sz)
 {
     FILE *f = fopen(path, "r");
     if (!f) return -1;
@@ -473,9 +476,30 @@ int profiles_load_all(named_profile_t *profiles, int *count, int max, const char
     buf[fsize] = '\0';
     fclose(f);
 
-    /* Simple JSON array parser — expects [{...},{...},...] */
+    /* Try to parse active profile name from wrapper: {"active":"...","profiles":[...]} */
+    if (active_name && active_name_sz > 0) {
+        active_name[0] = '\0';
+        char *act = strstr(buf, "\"active\":");
+        if (act) {
+            char *qs = strchr(act + 9, '"');
+            if (qs) {
+                qs++;
+                char *qe = strchr(qs, '"');
+                if (qe) {
+                    size_t len = (size_t)(qe - qs);
+                    if (len >= active_name_sz) len = active_name_sz - 1;
+                    memcpy(active_name, qs, len);
+                    active_name[len] = '\0';
+                }
+            }
+        }
+    }
+
+    /* Simple JSON parser — handles both [{...},...] and {"active":"...","profiles":[{...},...]} */
     int n = 0;
-    char *p = buf;
+    /* Skip to first '[' to find the profiles array */
+    char *arr_start = strchr(buf, '[');
+    char *p = arr_start ? arr_start : buf;
 
     while (n < max) {
         /* Find next '{' */
@@ -552,7 +576,8 @@ int profiles_load_all(named_profile_t *profiles, int *count, int max, const char
 
     free(buf);
     *count = n;
-    fprintf(stdout, "Profiles loaded from %s (%d profiles)\n", path, n);
+    fprintf(stdout, "Profiles loaded from %s (%d profiles, active=%s)\n", path, n,
+            (active_name && active_name[0]) ? active_name : "(none)");
     return 0;
 }
 
@@ -652,7 +677,8 @@ static void handle_profiles_save(struct http_client_session *session, const char
     session->server->active_profile_name[sizeof(session->server->active_profile_name) - 1] = '\0';
 
     /* Persist both */
-    profiles_save_all(session->server->profiles, session->server->profile_count, CAPTURE_PROFILES_PATH);
+    profiles_save_all(session->server->profiles, session->server->profile_count, CAPTURE_PROFILES_PATH,
+                      session->server->active_profile_name);
     capture_profile_save(&cc, CAPTURE_PROFILE_PATH);
 
     pthread_mutex_unlock(&session->server->profile_mtx);
@@ -704,7 +730,8 @@ static void handle_profiles_delete(struct http_client_session *session, const ch
         capture_profile_save(&session->server->saved_capture_profile, CAPTURE_PROFILE_PATH);
     }
 
-    profiles_save_all(session->server->profiles, session->server->profile_count, CAPTURE_PROFILES_PATH);
+    profiles_save_all(session->server->profiles, session->server->profile_count, CAPTURE_PROFILES_PATH,
+                      session->server->active_profile_name);
     pthread_mutex_unlock(&session->server->profile_mtx);
 
     if (was_active) {
@@ -1128,9 +1155,11 @@ struct http_server *http_capture_new(int port, struct video_source *video_src) {
         fprintf(stdout, "No saved capture profile, using defaults\n");
     }
 
-    /* Load named profiles */
-    if (profiles_load_all(server->profiles, &server->profile_count, MAX_PROFILES, CAPTURE_PROFILES_PATH) == 0) {
-        fprintf(stdout, "Loaded %d named profiles\n", server->profile_count);
+    /* Load named profiles (including persisted active name) */
+    if (profiles_load_all(server->profiles, &server->profile_count, MAX_PROFILES, CAPTURE_PROFILES_PATH,
+                          server->active_profile_name, sizeof(server->active_profile_name)) == 0) {
+        fprintf(stdout, "Loaded %d named profiles, active=%s\n", server->profile_count,
+                server->active_profile_name[0] ? server->active_profile_name : "(none)");
     } else {
         fprintf(stdout, "No named profiles found, starting empty\n");
     }

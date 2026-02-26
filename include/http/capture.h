@@ -84,7 +84,9 @@ int  capture_profile_save(const capture_controls_t *cc, const char *path);
 int  capture_profile_load(capture_controls_t *cc, const char *path);
 
 /* Multi-profile persistence */
-int  profiles_save_all(const named_profile_t *profiles, int count, const char *path);
-int  profiles_load_all(named_profile_t *profiles, int *count, int max, const char *path);
+int  profiles_save_all(const named_profile_t *profiles, int count, const char *path,
+                       const char *active_name);
+int  profiles_load_all(named_profile_t *profiles, int *count, int max, const char *path,
+                       char *active_name, size_t active_name_sz);
 
 #endif /* __CAPTURE_H__ */
