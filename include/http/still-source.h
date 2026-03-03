@@ -14,6 +14,8 @@
 #include <sys/time.h>
 #include <stdint.h>
 
+#include "capture_controls.h"
+
 struct v4l2_pix_format;
 struct still_source;
 
@@ -34,7 +36,7 @@ struct still_source_ops {
     int(*set_format)(struct still_source *src, struct v4l2_pix_format *fmt);
     int(*alloc_buffer)(struct still_source *src);
     int(*free_buffer)(struct still_source *src);
-    int(*capture)(struct still_source *src, int64_t exposure_us, float gain);
+    int(*capture)(struct still_source *src, const capture_controls_t *cc);
     int(*capture_off)(struct still_source *src);
 };
 
@@ -49,6 +51,6 @@ void still_source_destroy(struct still_source *src);
 int still_source_set_format(struct still_source *src, struct v4l2_pix_format *fmt);
 int still_source_alloc_buffer(struct still_source *src);
 int still_source_free_buffer(struct still_source *src);
-int still_source_capture(struct still_source *src, int64_t exposure_us, float gain);
+int still_source_capture(struct still_source *src, const capture_controls_t *cc);
 
 #endif /* __STILL_SOURCE_H__ */

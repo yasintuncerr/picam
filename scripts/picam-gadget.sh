@@ -201,9 +201,8 @@ case "$1" in
     	echo "Creating functions..."
 
     	create_uvc configs/c.1 uvc.0
-    
-        create_ethernet_ncm configs/c.1 ncm.0	
-    
+        create_ethernet_ncm configs/c.1 ncm.0
+
         echo "OK"
 
     

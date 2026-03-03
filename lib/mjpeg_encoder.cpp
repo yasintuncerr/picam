@@ -12,6 +12,7 @@
 #include <cstring>
 
 #include <libcamera/libcamera.h>
+#include <cstdlib>    /* malloc, free — used by EncodeBufferSync */
 #include "mjpeg_encoder.hpp"
 
 // ----------------------------------------------------------------------------
@@ -81,6 +82,79 @@ StreamInfo MjpegEncoder::getStreamInfo(libcamera::Stream *stream)
     info.pixel_format = cfg.pixelFormat;
     info.colour_space = cfg.colorSpace;
     return info;
+}
+
+/*
+ * Synchronous one-shot JPEG encode for still capture.
+ * Always uses libjpeg (CPU) to avoid interfering with the
+ * async video encoding pipeline.
+ */
+int MjpegEncoder::EncodeBufferSync(void *mem, unsigned int size,
+				   StreamInfo const &info, int quality,
+				   void **out_jpeg, size_t *out_jpeg_size)
+{
+	(void)size;
+	if (!mem || !out_jpeg || !out_jpeg_size || info.width == 0 || info.height == 0)
+		return -1;
+
+	struct jpeg_compress_struct cinfo;
+	struct jpeg_error_mgr jerr;
+
+	cinfo.err = jpeg_std_error(&jerr);
+	jpeg_create_compress(&cinfo);
+
+	unsigned char *jpeg_buf = nullptr;
+	unsigned long jpeg_len = 0;
+	jpeg_mem_dest(&cinfo, &jpeg_buf, &jpeg_len);
+
+	cinfo.image_width = info.width;
+	cinfo.image_height = info.height;
+	cinfo.input_components = 3;
+	cinfo.in_color_space = JCS_YCbCr;
+	cinfo.restart_interval = 0;
+
+	jpeg_set_defaults(&cinfo);
+	cinfo.raw_data_in = TRUE;
+	jpeg_set_quality(&cinfo, quality > 0 ? quality : 90, TRUE);
+	jpeg_start_compress(&cinfo, TRUE);
+
+	int stride2 = info.stride / 2;
+	uint8_t *Y = (uint8_t *)mem;
+	uint8_t *U = Y + info.stride * info.height;
+	uint8_t *V = U + stride2 * (info.height / 2);
+	uint8_t *Y_max = U - info.stride;
+	uint8_t *U_max = V - stride2;
+	uint8_t *V_max = U_max + stride2 * (info.height / 2);
+
+	JSAMPROW y_rows[16];
+	JSAMPROW u_rows[8];
+	JSAMPROW v_rows[8];
+
+	for (uint8_t *Y_row = Y, *U_row = U, *V_row = V;
+		 cinfo.next_scanline < info.height;) {
+		for (int i = 0; i < 16; i++, Y_row += info.stride)
+			y_rows[i] = std::min(Y_row, Y_max);
+		for (int i = 0; i < 8; i++, U_row += stride2, V_row += stride2) {
+			u_rows[i] = std::min(U_row, U_max);
+			v_rows[i] = std::min(V_row, V_max);
+		}
+		JSAMPARRAY rows[] = { y_rows, u_rows, v_rows };
+		jpeg_write_raw_data(&cinfo, rows, 16);
+	}
+
+	jpeg_finish_compress(&cinfo);
+	jpeg_destroy_compress(&cinfo);
+
+	*out_jpeg = std::malloc(jpeg_len);
+	if (!*out_jpeg) {
+		free(jpeg_buf);
+		return -1;
+	}
+	std::memcpy(*out_jpeg, jpeg_buf, jpeg_len);
+	*out_jpeg_size = (size_t)jpeg_len;
+	free(jpeg_buf);
+
+	return 0;
 }
 
 // ----------------------------------------------------------------------------

@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PiCam — Microscope Camera</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f3f4f6;
+    --card-bg: #ffffff;
+    --card-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -4px rgba(0,0,0,0.1);
+    --card-radius: 12px;
+    --border: #e5e7eb;
+    --primary: #4f46e5;
+    --primary-hover: #4338ca;
+    --primary-light: #eef2ff;
+    --primary-ring: rgba(79,70,229,0.3);
+    --danger: #dc2626;
+    --danger-light: #fef2f2;
+    --success: #16a34a;
+    --success-light: #f0fdf4;
+    --warn: #d97706;
+    --text: #111827;
+    --text-secondary: #6b7280;
+    --text-muted: #9ca3af;
+    --input-border: #d1d5db;
+    --input-focus: #4f46e5;
+    --slider-track: #e5e7eb;
+    --slider-active: #4f46e5;
+    --tr: 0.15s ease;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;line-height:1.5}
+
+  /* ── Layout ── */
+  .app{display:flex;flex-direction:column;height:100vh}
+
+  /* ── Header ── */
+  .header{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;background:var(--card-bg);border-bottom:1px solid var(--border);box-shadow:0 1px 3px rgba(0,0,0,0.05);z-index:10}
+  .header-left{display:flex;align-items:center;gap:10px}
+  .header h1{font-size:.95rem;font-weight:700;color:var(--text)}
+  .header .logo{font-size:1.2rem}
+  .badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:12px;font-size:.65rem;font-weight:600}
+  .badge-success{background:var(--success-light);color:var(--success)}
+  .badge-danger{background:var(--danger-light);color:var(--danger)}
+  .badge .dot{width:6px;height:6px;border-radius:50%}
+  .badge-success .dot{background:var(--success)}
+  .badge-danger .dot{background:var(--danger)}
+  .header-actions{display:flex;align-items:center;gap:8px}
+  .nav-btn{padding:6px 14px;border-radius:8px;font-family:'Inter',sans-serif;font-size:.75rem;font-weight:500;cursor:pointer;border:1px solid var(--border);background:var(--card-bg);color:var(--text-secondary);transition:var(--tr)}
+  .nav-btn:hover{border-color:var(--primary);color:var(--primary)}
+  .nav-btn.active{background:var(--primary);color:#fff;border-color:var(--primary)}
+
+  /* ── Main content ── */
+  .main{display:flex;flex:1;overflow:hidden}
+
+  /* ── Video ── */
+  .video-section{flex:1;background:#000;position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden}
+  .video-section video{width:100%;height:100%;object-fit:contain}
+  .video-status{position:absolute;top:12px;left:12px;display:flex;align-items:center;gap:6px;background:rgba(0,0,0,.65);padding:5px 12px;border-radius:16px;font-size:.68rem;font-weight:500;color:#fff;backdrop-filter:blur(6px)}
+  .video-status .vdot{width:7px;height:7px;border-radius:50%;background:#ef4444;animation:vblink 1.2s infinite}
+  .video-status .vdot.live{background:#22c55e;animation:none}
+  @keyframes vblink{0%,100%{opacity:1}50%{opacity:.3}}
+  .uvc-toggle{position:absolute;top:12px;right:12px;padding:6px 14px;border-radius:16px;font-family:'Inter',sans-serif;font-size:.68rem;font-weight:600;cursor:pointer;border:none;backdrop-filter:blur(6px);transition:var(--tr)}
+  .uvc-toggle.on{background:rgba(239,68,68,.85);color:#fff}
+  .uvc-toggle.off{background:rgba(34,197,94,.85);color:#fff}
+  .no-video{color:rgba(255,255,255,.5);text-align:center;padding:40px}
+  .no-video svg{margin-bottom:8px;opacity:.3}
+  .no-video p{font-size:.85rem}
+  .no-video .net-msg{font-size:.68rem;color:rgba(34,197,94,.8);margin-top:6px}
+
+  /* ── Sidebar ── */
+  .sidebar{width:360px;background:var(--card-bg);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto}
+  .sidebar-content{padding:16px;display:flex;flex-direction:column;gap:14px;flex:1;overflow-y:auto}
+
+  /* ── Page visibility ── */
+  .page{display:none;flex-direction:column;gap:14px}
+  .page.active{display:flex}
+
+  /* ── Card ── */
+  .card{background:var(--card-bg);border:1px solid var(--border);border-radius:var(--card-radius);padding:16px;box-shadow:0 1px 3px rgba(0,0,0,0.04)}
+  .card-title{font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:10px}
+
+  /* ── Controls ── */
+  .cr{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+  .cr:last-child{margin-bottom:0}
+  .cl{font-size:.8rem;font-weight:500;color:var(--text);min-width:76px}
+  .cl small{display:block;font-weight:400;font-size:.65rem;color:var(--text-muted)}
+  .cv{font-size:.75rem;font-weight:600;color:var(--primary);min-width:36px;text-align:right;font-variant-numeric:tabular-nums}
+  .sw{flex:1;margin:0 10px}
+
+  input[type=range]{appearance:none;-webkit-appearance:none;width:100%;height:4px;border-radius:2px;background:var(--slider-track);outline:none;cursor:pointer}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--primary);box-shadow:0 1px 4px var(--primary-ring);cursor:pointer;transition:transform .1s}
+  input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.15)}
+
+  input[type=number]{background:var(--card-bg);border:1px solid var(--input-border);border-radius:8px;padding:6px 8px;color:var(--text);font-size:.8rem;font-family:'Inter',monospace;width:90px;outline:none;text-align:right;transition:var(--tr)}
+  input[type=number]:focus{border-color:var(--input-focus);box-shadow:0 0 0 3px var(--primary-ring)}
+
+  /* ── Toggle ── */
+  .tw{display:flex;align-items:center;gap:8px;font-size:.7rem;color:var(--text-secondary)}
+  .tg{position:relative;width:36px;height:20px;cursor:pointer}
+  .tg input{display:none}
+  .tg-tr{position:absolute;inset:0;border-radius:10px;background:var(--slider-track);transition:var(--tr)}
+  .tg-th{position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.15);transition:var(--tr)}
+  .tg input:checked~.tg-tr{background:var(--primary)}
+  .tg input:checked~.tg-th{left:19px}
+
+  /* ── Radio / Format ── */
+  .rg{display:flex;gap:3px;background:var(--bg);border-radius:8px;padding:3px}
+  .rb{flex:1;padding:6px 12px;border:none;border-radius:6px;font-family:'Inter',sans-serif;font-size:.75rem;font-weight:600;color:var(--text-secondary);background:transparent;cursor:pointer;transition:var(--tr);text-align:center}
+  .rb.a{background:var(--primary);color:#fff;box-shadow:0 1px 3px var(--primary-ring)}
+  .qr{display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
+  .qr.show{display:block}
+
+  /* ── Buttons ── */
+  .br{display:flex;gap:8px}
+  .btn{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:10px 14px;border-radius:8px;border:1px solid transparent;font-family:'Inter',sans-serif;font-size:.78rem;font-weight:600;cursor:pointer;transition:var(--tr);box-shadow:0 1px 2px rgba(0,0,0,.05)}
+  .btn:active{transform:scale(.97)}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .btn-primary{background:var(--primary);color:#fff;border-color:var(--primary)}
+  .btn-primary:hover{background:var(--primary-hover)}
+  .btn-danger{background:transparent;border-color:var(--danger);color:var(--danger)}
+  .btn-danger:hover{background:var(--danger-light)}
+  .btn-outline{background:transparent;border-color:var(--border);color:var(--text-secondary)}
+  .btn-outline:hover{border-color:var(--primary);color:var(--primary)}
+  .btn-sm{padding:5px 10px;font-size:.68rem;border-radius:6px;flex:0}
+
+  .btn-x{padding:2px 6px;font-size:.6rem;border-radius:4px;flex:0;background:transparent;border:1px solid var(--danger);color:var(--danger);cursor:pointer;font-family:'Inter',sans-serif;transition:var(--tr)}
+  .btn-x:hover{background:var(--danger-light)}
+
+  .info{font-size:.7rem;color:var(--text-secondary);background:var(--primary-light);border:1px solid rgba(79,70,229,.15);border-radius:8px;padding:8px 10px;line-height:1.5}
+
+  /* ── Toast ── */
+  .toast-c{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:100;display:flex;flex-direction:column;align-items:center;gap:5px;pointer-events:none}
+  .toast{background:var(--card-bg);border:1px solid var(--border);border-radius:10px;padding:8px 16px;font-size:.75rem;box-shadow:var(--card-shadow);animation:ti .3s ease-out,to .3s 2.5s ease-in forwards;pointer-events:auto}
+  .toast.s{border-color:var(--success);color:var(--success)}
+  .toast.e{border-color:var(--danger);color:var(--danger)}
+  .toast.i{border-color:var(--primary);color:var(--primary)}
+  @keyframes ti{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes to{from{opacity:1}to{opacity:0}}
+
+  .preset-list{display:flex;flex-direction:column;gap:5px;max-height:180px;overflow-y:auto}
+  .pi{display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:var(--bg);border-radius:8px;font-size:.75rem;transition:var(--tr);cursor:pointer}
+  .pi:hover{background:var(--primary-light)}
+  .pi .pn{font-weight:500;flex:1}
+
+  .ssl{padding:10px 16px;border-top:1px solid var(--border);font-size:.68rem;color:var(--text-muted)}
+  .ssl a{color:var(--primary);text-decoration:none;font-weight:500}
+  .ssl a:hover{text-decoration:underline}
+
+  @media(max-width:768px){
+    .main{flex-direction:column}
+    .video-section{min-height:50vh}
+    .sidebar{width:100%;border-left:none;border-top:1px solid var(--border);max-height:50vh}
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- ── Header ── -->
+  <div class="header">
+    <div class="header-left">
+      <span class="logo">🔬</span>
+      <h1>PiCam</h1>
+      <div class="badge badge-success" id="connBadge"><span class="dot"></span><span id="connText">Bağlı</span></div>
+    </div>
+    <div class="header-actions">
+      <button class="nav-btn active" id="navMain" onclick="showPage('main')">🖥️ Ana Ekran</button>
+      <button class="nav-btn" id="navSettings" onclick="showPage('settings')">⚙️ Ayarlar</button>
+    </div>
+  </div>
+
+  <!-- ── Main ── -->
+  <div class="main">
+    <!-- Video -->
+    <div class="video-section">
+      <div class="video-status">
+        <span class="vdot" id="liveDot"></span>
+        <span id="liveLabel">Bağlanıyor…</span>
+      </div>
+      <button class="uvc-toggle on" id="uvcBtn" onclick="toggleUvc()">⏹ Durdur</button>
+      <video id="vid" autoplay playsinline muted></video>
+      <div class="no-video" id="noVid" style="display:none">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+        <p>UVC Video Kapalı</p>
+        <p class="net-msg">🌐 Network kontrolleri aktif — çekim yapabilirsiniz</p>
+      </div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <div class="sidebar-content">
+        <!-- ═══ ANA EKRAN ═══ -->
+        <div class="page active" id="pageMain">
+
+          <div class="card">
+            <div class="card-title">🎨 Görüntü Ayarları</div>
+            <div class="cr">
+              <span class="cl">Brightness</span>
+              <div class="sw"><input type="range" id="sBri" min="-100" max="100" value="0"></div>
+              <span class="cv" id="dBri">0</span>
+            </div>
+            <div class="cr">
+              <span class="cl">Contrast</span>
+              <div class="sw"><input type="range" id="sCon" min="0" max="100" value="50"></div>
+              <span class="cv" id="dCon">50</span>
+            </div>
+            <div class="cr">
+              <span class="cl">Saturation</span>
+              <div class="sw"><input type="range" id="sSat" min="0" max="100" value="50"></div>
+              <span class="cv" id="dSat">50</span>
+            </div>
+            <div class="cr">
+              <span class="cl">Sharpness</span>
+              <div class="sw"><input type="range" id="sSha" min="0" max="100" value="50"></div>
+              <span class="cv" id="dSha">50</span>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">📷 Çekim</div>
+            <div class="cr">
+              <span class="cl">Format</span>
+              <div class="rg">
+                <button class="rb a" id="fD" onclick="setFmt('dng')">DNG (RAW)</button>
+                <button class="rb" id="fJ" onclick="setFmt('jpeg')">JPEG</button>
+              </div>
+            </div>
+            <div class="qr" id="qR">
+              <div class="cr">
+                <span class="cl">Kalite</span>
+                <div class="sw"><input type="range" id="sQua" min="1" max="100" value="90"></div>
+                <span class="cv" id="dQua">90</span>
+              </div>
+            </div>
+          </div>
+
+          <button class="btn btn-primary" style="width:100%;padding:14px;font-size:.85rem" onclick="capture()">
+            📷 Capture
+          </button>
+
+          <div class="br">
+            <button class="btn btn-danger" onclick="resetImg()">🔄 Görüntü Sıfırla</button>
+          </div>
+        </div>
+
+        <!-- ═══ AYARLAR ═══ -->
+        <div class="page" id="pageSettings">
+
+          <div class="info">
+            ⏱️ Exposure ve Gain vizöre canlı yansır. Auto→Manuel geçişinde mevcut değer korunur.
+          </div>
+
+          <div class="card">
+            <div class="card-title">⏱️ Pozlama</div>
+            <div class="cr">
+              <span class="cl">Mod</span>
+              <div class="tw">
+                <span>Auto</span>
+                <label class="tg">
+                  <input type="checkbox" id="expM" onchange="onExpToggle()">
+                  <span class="tg-tr"></span>
+                  <span class="tg-th"></span>
+                </label>
+                <span>Manuel</span>
+              </div>
+            </div>
+            <div class="cr" id="expR" style="opacity:.35;pointer-events:none">
+              <span class="cl">Süre <small>µs</small></span>
+              <input type="number" id="expV" value="20000" min="100" max="5000000" step="500">
+            </div>
+            <div style="font-size:.65rem;color:var(--text-muted);margin-top:4px">
+              Anlık: <span id="curExp">—</span> µs
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">📈 Kazanç (Gain)</div>
+            <div class="cr">
+              <span class="cl">Gain</span>
+              <div class="sw"><input type="range" id="sGain" min="0" max="16" step="0.1" value="0"></div>
+              <span class="cv" id="dGain">Auto</span>
+            </div>
+            <div style="font-size:.65rem;color:var(--text-muted);margin-top:4px">
+              0 = Otomatik · Anlık: <span id="curGain">—</span>
+            </div>
+          </div>
+
+          <div class="br">
+            <button class="btn btn-primary" onclick="saveProf()">💾 Profili Kaydet</button>
+            <button class="btn btn-danger" onclick="resetProf()">🔄 Default</button>
+          </div>
+
+          <div class="card">
+            <div class="card-title">⚡ Kayıtlı Profiller</div>
+            <div class="preset-list" id="pList"></div>
+            <div id="pEmpty" style="font-size:.7rem;color:var(--text-muted);padding:4px 0">Henüz profil yok</div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="ssl">📜 <a href="/picam-ca.crt" download>SSL Sertifika İndir</a></div>
+    </div>
+  </div>
+</div>
+
+<div class="toast-c" id="tc"></div>
+
+<script>
+const B = (location.protocol==='file:') ? 'http://192.168.7.2:8080' : '';
+const D = 300;
+const $ = id => document.getElementById(id);
+let fmt = 'dng';
+
+/* ── Pages ── */
+function showPage(p) {
+  $('pageMain').classList.toggle('active', p==='main');
+  $('pageSettings').classList.toggle('active', p==='settings');
+  $('navMain').classList.toggle('active', p==='main');
+  $('navSettings').classList.toggle('active', p==='settings');
+}
+
+/* ── Video ── */
+let uvcStream = null, uvcOn = false;
+
+async function initVid() {
+  try {
+    uvcStream = await navigator.mediaDevices.getUserMedia({video:{width:{ideal:1920},height:{ideal:1080}},audio:false});
+    $('vid').srcObject = uvcStream;
+    $('vid').style.display = 'block';
+    $('noVid').style.display = 'none';
+    $('liveDot').classList.add('live');
+    $('liveLabel').textContent = 'LIVE';
+    $('uvcBtn').className = 'uvc-toggle on';
+    $('uvcBtn').textContent = '⏹ Durdur';
+    uvcOn = true;
+  } catch(e) {
+    $('vid').style.display = 'none';
+    $('noVid').style.display = 'block';
+    $('liveDot').classList.remove('live');
+    $('liveLabel').textContent = 'Kamera yok';
+    $('uvcBtn').className = 'uvc-toggle off';
+    $('uvcBtn').textContent = '▶ Başlat';
+    uvcOn = false;
+  }
+}
+
+function stopVid() {
+  if (uvcStream) { uvcStream.getTracks().forEach(t=>t.stop()); uvcStream=null; }
+  $('vid').srcObject = null;
+  $('vid').style.display = 'none';
+  $('noVid').style.display = 'block';
+  $('liveDot').classList.remove('live');
+  $('liveLabel').textContent = 'UVC Kapalı';
+  $('uvcBtn').className = 'uvc-toggle off';
+  $('uvcBtn').textContent = '▶ Başlat';
+  uvcOn = false;
+}
+
+function toggleUvc() { uvcOn ? stopVid() : initVid(); }
+
+/* ── Connection ── */
+async function chkConn() {
+  try {
+    const c = new AbortController();
+    setTimeout(()=>c.abort(), 4000);
+    await fetch(`${B}/camera_status`, {signal:c.signal});
+    $('connBadge').className = 'badge badge-success';
+    $('connText').textContent = 'Bağlı';
+  } catch {
+    $('connBadge').className = 'badge badge-danger';
+    $('connText').textContent = 'Offline';
+  }
+}
+
+/* ── Apply all to /video_controls ── */
+function buildParams() {
+  const p = new URLSearchParams();
+  p.set('brightness', $('sBri').value);
+  p.set('contrast', $('sCon').value);
+  p.set('saturation', $('sSat').value);
+  p.set('sharpness', $('sSha').value);
+  if ($('expM').checked) { const v=parseInt($('expV').value)||0; if(v>0) p.set('exposure',v); }
+  const g = parseFloat($('sGain').value);
+  if (g > 0) p.set('gain', g);
+  return p.toString();
+}
+
+let at=null, busy=false;
+function sched() { clearTimeout(at); at=setTimeout(apply, D); }
+async function apply() {
+  if(busy)return; busy=true;
+  try { await fetch(`${B}/video_controls?${buildParams()}`); } catch {}
+  finally { busy=false; }
+}
+
+/* ── Camera status ── */
+async function pollStatus() {
+  try {
+    const r = await fetch(`${B}/camera_status`);
+    if(!r.ok) return;
+    const j = await r.json();
+    $('curExp').textContent = j.exposure_us || '—';
+    $('curGain').textContent = j.gain ? j.gain.toFixed(2) : '—';
+  } catch {}
+}
+
+/* ── Exposure toggle ── */
+async function onExpToggle() {
+  const on = $('expM').checked;
+  $('expR').style.opacity = on ? '1' : '.35';
+  $('expR').style.pointerEvents = on ? 'auto' : 'none';
+  if (on) {
+    try {
+      const r = await fetch(`${B}/camera_status`);
+      if(r.ok) {
+        const j = await r.json();
+        if(j.exposure_us>0) $('expV').value = j.exposure_us;
+        if(j.gain>0) { $('sGain').value=j.gain; $('dGain').textContent=j.gain.toFixed(1); }
+      }
+    } catch {}
+  }
+  sched();
+}
+
+/* ── Format ── */
+function setFmt(f) {
+  fmt=f;
+  $('fD').classList.toggle('a',f==='dng');
+  $('fJ').classList.toggle('a',f==='jpeg');
+  $('qR').classList.toggle('show',f==='jpeg');
+}
+
+/* ── Capture with Save-As dialog ── */
+function buildCapParams() {
+  const p = new URLSearchParams();
+  if ($('expM').checked) { const v=parseInt($('expV').value)||0; if(v>0) p.set('exposure',v); }
+  const g = parseFloat($('sGain').value);
+  if (g > 0) p.set('gain', g);
+  p.set('format', fmt);
+  if (fmt==='jpeg') p.set('quality', $('sQua').value);
+  return p.toString();
+}
+
+async function capture() {
+  const ext = fmt === 'jpeg' ? 'jpg' : 'dng';
+  const defaultName = `capture_${new Date().toISOString().replace(/[:.]/g,'-').slice(0,19)}.${ext}`;
+  const name = prompt('Dosya adı:', defaultName);
+  if (!name) { toast('İptal edildi', 'i'); return; }
+
+  toast('Capture…', 'i');
+  try {
+    const r = await fetch(`${B}/capture?${buildCapParams()}`);
+    if (!r.ok) throw new Error(r.statusText);
+    const blob = await r.blob();
+    if (blob.size === 0) throw new Error('Boş dosya');
+
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast(`İndirildi: ${name} (${(blob.size/1024/1024).toFixed(1)}MB)`, 's');
+  } catch(e) { toast('Capture hatası: '+e.message, 'e'); }
+}
+
+/* ── Reset image ── */
+function resetImg() {
+  $('sBri').value=0;  $('dBri').textContent='0';
+  $('sCon').value=50; $('dCon').textContent='50';
+  $('sSat').value=50; $('dSat').textContent='50';
+  $('sSha').value=50; $('dSha').textContent='50';
+  apply();
+  toast('Görüntü sıfırlandı', 's');
+}
+
+/* ── Profile save/load/reset ── */
+let activeProfileName = '';
+
+async function saveProf() {
+  const name = prompt('Profil adı girin:', activeProfileName || '');
+  if (!name || !name.trim()) { toast('İptal edildi', 'i'); return; }
+  const trimmed = name.trim();
+
+  const p = new URLSearchParams();
+  p.set('name', trimmed);
+  if ($('expM').checked) { const v=parseInt($('expV').value)||0; if(v>0) p.set('exposure',v); }
+  const g = parseFloat($('sGain').value);
+  if (g > 0) p.set('gain', g);
+  p.set('format', fmt);
+  if (fmt==='jpeg') p.set('quality', $('sQua').value);
+  p.set('brightness', $('sBri').value);
+  p.set('contrast', $('sCon').value);
+  p.set('saturation', $('sSat').value);
+  p.set('sharpness', $('sSha').value);
+
+  try {
+    const r = await fetch(`${B}/profiles/save?${p.toString()}`);
+    const j = await r.json();
+    if (j.status === 'ok') {
+      activeProfileName = trimmed;
+      toast(`"${trimmed}" kaydedildi ✓`, 's');
+      await renderPresets();
+    } else {
+      toast(j.message || 'Kayıt hatası', 'e');
+    }
+  } catch(e) { toast('Kayıt hatası: ' + e.message, 'e'); }
+}
+
+async function resetProf() {
+  try {
+    await fetch(`${B}/capture_controls/reset`);
+    $('expM').checked=false; onExpToggle();
+    $('sGain').value=0; $('dGain').textContent='Auto';
+    $('sBri').value=0; $('dBri').textContent='0';
+    $('sCon').value=50; $('dCon').textContent='50';
+    $('sSat').value=50; $('dSat').textContent='50';
+    $('sSha').value=50; $('dSha').textContent='50';
+    setFmt('dng'); $('sQua').value=90; $('dQua').textContent='90';
+    activeProfileName = '';
+    await renderPresets();
+    toast('Default yüklendi ✓', 's');
+  } catch(e) { toast('Reset hatası', 'e'); }
+}
+
+function resetUIToDefaults() {
+  $('expM').checked=false; onExpToggle();
+  $('sGain').value=0; $('dGain').textContent='Auto';
+  $('sBri').value=0; $('dBri').textContent='0';
+  $('sCon').value=50; $('dCon').textContent='50';
+  $('sSat').value=50; $('dSat').textContent='50';
+  $('sSha').value=50; $('dSha').textContent='50';
+  setFmt('dng'); $('sQua').value=90; $('dQua').textContent='90';
+  activeProfileName = '';
+}
+
+async function loadProf() {
+  try {
+    const r = await fetch(`${B}/capture_controls`);
+    if(!r.ok) return;
+    const p = await r.json();
+    if(p.exposure_us>0) { $('expM').checked=true; $('expV').value=p.exposure_us; } else { $('expM').checked=false; }
+    $('expR').style.opacity = $('expM').checked?'1':'.35';
+    $('expR').style.pointerEvents = $('expM').checked?'auto':'none';
+    $('sGain').value = p.gain||0;
+    $('dGain').textContent = p.gain>0 ? parseFloat(p.gain).toFixed(1) : 'Auto';
+    setFmt(p.format==='jpeg'?'jpeg':'dng');
+    if(p.jpeg_quality) { $('sQua').value=p.jpeg_quality; $('dQua').textContent=p.jpeg_quality; }
+    sched();
+  } catch(e) { console.warn('loadProf:', e); }
+}
+
+/* ── Server-backed profiles ── */
+async function renderPresets() {
+  const l=$('pList');
+  l.innerHTML='';
+  try {
+    const r = await fetch(`${B}/profiles`);
+    if (!r.ok) throw new Error(r.statusText);
+    const data = await r.json();
+    const ps = data.profiles || [];
+    if (data.active) activeProfileName = data.active;
+
+    $('pEmpty').style.display = ps.length===0?'block':'none';
+    ps.forEach(p => {
+      const d=document.createElement('div'); d.className='pi';
+      if (p.name === activeProfileName) d.style.borderLeft='3px solid var(--primary)';
+      const n=document.createElement('span'); n.className='pn'; n.textContent=p.name;
+      n.onclick=()=>applyPreset(p);
+      const x=document.createElement('button'); x.className='btn-x'; x.textContent='✕';
+      x.onclick=e=>{e.stopPropagation();deletePreset(p.name);};
+      d.appendChild(n); d.appendChild(x); l.appendChild(d);
+    });
+  } catch(e) {
+    $('pEmpty').style.display='block';
+    $('pEmpty').textContent='Profiller yüklenemedi';
+    console.warn('renderPresets:', e);
+  }
+}
+
+async function applyPreset(p) {
+  if(p.exposure_us>0) { $('expM').checked=true; $('expV').value=p.exposure_us; } else { $('expM').checked=false; }
+  $('expR').style.opacity=$('expM').checked?'1':'.35';
+  $('expR').style.pointerEvents=$('expM').checked?'auto':'none';
+  $('sGain').value=p.gain||0;
+  $('dGain').textContent=parseFloat(p.gain||0)>0?parseFloat(p.gain).toFixed(1):'Auto';
+  setFmt(p.format==='jpeg'?'jpeg':'dng');
+  $('sQua').value=p.jpeg_quality||90; $('dQua').textContent=p.jpeg_quality||'90';
+  if(p.brightness!==undefined){$('sBri').value=p.brightness;$('dBri').textContent=p.brightness;}
+  if(p.contrast!==undefined){$('sCon').value=p.contrast;$('dCon').textContent=p.contrast;}
+  if(p.saturation!==undefined){$('sSat').value=p.saturation;$('dSat').textContent=p.saturation;}
+  if(p.sharpness!==undefined){$('sSha').value=p.sharpness;$('dSha').textContent=p.sharpness;}
+  sched();
+
+  /* Tell server to make this profile active */
+  try { await fetch(`${B}/profiles/load?name=${encodeURIComponent(p.name)}`); } catch {}
+  activeProfileName = p.name;
+  await renderPresets();
+  toast(`"${p.name}" yüklendi`, 'i');
+}
+
+async function deletePreset(name) {
+  if(!confirm(`"${name}" silinsin mi?`)) return;
+  try {
+    const r = await fetch(`${B}/profiles/delete?name=${encodeURIComponent(name)}`);
+    const j = await r.json();
+    if (j.reset) {
+      resetUIToDefaults();
+      toast(`Aktif profil silindi, varsayılanlara dönüldü`, 'i');
+    } else {
+      toast(`"${name}" silindi`, 'i');
+    }
+    await renderPresets();
+  } catch(e) { toast('Silme hatası: ' + e.message, 'e'); }
+}
+
+/* ── Toast ── */
+function toast(m,t='s') {
+  const e=document.createElement('div'); e.className=`toast ${t}`; e.textContent=m;
+  $('tc').appendChild(e); setTimeout(()=>e.remove(),3000);
+}
+
+/* ── Events ── */
+['sBri','sCon','sSat','sSha'].forEach(id=>{
+  $(id).addEventListener('input',()=>{ $(id.replace('s','d')).textContent=$(id).value; sched(); });
+});
+$('sGain').addEventListener('input',()=>{
+  const v=parseFloat($('sGain').value);
+  $('dGain').textContent=v>0?v.toFixed(1):'Auto';
+  sched();
+});
+$('expV').addEventListener('change', sched);
+$('sQua').addEventListener('input',()=>{ $('dQua').textContent=$('sQua').value; });
+
+/* ── Init ── */
+initVid(); chkConn(); loadProf(); renderPresets(); pollStatus();
+setInterval(chkConn, 15000);
+setInterval(pollStatus, 2000);
+</script>
+</body>
+</html>

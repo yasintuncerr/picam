@@ -32,7 +32,12 @@ extern "C" {
 #include "video-buffers.h"
 #include "still-source.h"
 #include "video-source.h"
+#include "capture_controls.h"
 }
+
+/* Prevent C macros from tools.h clashing with std::min / std::max */
+#undef min
+#undef max
 #include "dng-writer.h"
 
 
@@ -57,11 +62,14 @@ struct libcamera_source {
 	std::unique_ptr<CameraConfiguration> config;
 	std::shared_ptr<Camera> camera;
 	ControlList controls;
-	bool video_prev_ae_enabled_ = true;
-	int64_t video_prev_exposure_ = 0;
-	float video_prev_gain_ = 1.0f;
-	bool video_restore_needed_ = false;
+	bool controls_dirty_ = false;
+	bool restore_pending_ = false;
+	ControlList restore_controls_;
 	int pfds[2];
+
+	/* Current auto-computed values from last frame metadata */
+	int64_t current_exposure_us = 0;
+	float   current_gain = 0.0f;
 	
 	/* Video Stream resources */
 	struct {
@@ -93,7 +101,7 @@ struct libcamera_source {
 
 #ifdef STILL_CAPTURE
 	
-	int captureStill(int64_t exposure_us, float gain);
+	int captureStill(const capture_controls_t *cc);
 	void DNGOutputReady(DngBufferPtr buffer);
 	// DNG Output Ready Callback will be handled like output ready of MJPEG Encoder
 #endif
@@ -167,44 +175,23 @@ void libcamera_source::outputReady(void *mem, size_t bytesused, int64_t timestam
 }
 
 #ifdef STILL_CAPTURE
-int libcamera_source::captureStill(int64_t exposure_us, float gain)
+/* Forward declaration */
+static void apply_capture_controls(libcamera::Request *req, const capture_controls_t *cc);
+
+int libcamera_source::captureStill(const capture_controls_t *cc)
 {
     std::unique_ptr<Request> request = camera->createRequest();
     if (!request) {
         return -ENOMEM;
     }
-    
-    ControlList &ctrls = request->controls();
 
-    if (!video_restore_needed_) {
-        
-        auto ae_enable = controls.get(controls::AeEnable);
-        if (ae_enable) {
-            video_prev_ae_enabled_ = *ae_enable;
-        }
-        
-        if (!video_prev_ae_enabled_) {
-            auto exposure = controls.get(controls::ExposureTime);
-            auto gain_val = controls.get(controls::AnalogueGain);
-            
-            if (exposure) video_prev_exposure_ = *exposure;
-            if (gain_val) video_prev_gain_ = *gain_val;
-        }
-        
-        video_restore_needed_ = true;
+    restore_controls_ = controls;
+    restore_pending_  = false;
+
+    if (cc) {
+        apply_capture_controls(request.get(), cc);
     }
 
-    if (exposure_us > 0) {
-        ctrls.set(controls::AeEnable, false);
-        ctrls.set(controls::ExposureTime, exposure_us);
-        ctrls.set(controls::AnalogueGain, (gain > 0.0f) ? gain : 1.0f);
-    } else if (gain > 0.0f) {
-        ctrls.set(controls::AeEnable, true);
-        ctrls.set(controls::AnalogueGain, gain);
-    } else {
-        ctrls.set(controls::AeEnable, true);
-    }
-    
     FrameBuffer *buffer_to_use = still.mapped_buffers_.begin()->first;
     Stream *stream = config->at(1).stream();
     int ret = request->addBuffer(stream, buffer_to_use);
@@ -230,24 +217,102 @@ void libcamera_source::DNGOutputReady(DngBufferPtr buffer)
     }
     
     still.capture_in_progress = false;
-    
-    if (video_restore_needed_) {
-        if (video_prev_ae_enabled_) {
-            controls.set(controls::AeEnable, true);
-        } else {
-            controls.set(controls::AeEnable, false);
-            if (video_prev_exposure_ > 0) {
-                controls.set(controls::ExposureTime, video_prev_exposure_);
-            }
-            if (video_prev_gain_ > 0.0f) {
-                controls.set(controls::AnalogueGain, video_prev_gain_);
-            }
-        }
-        video_restore_needed_ = false;
-    }
+    restore_pending_ = true;
 }
 #endif
 
+
+/* --------------------------------------------------------------------------------
+ * ----- apply_capture_controls helper ---- *
+ * --------------------------------------------------------------------------------
+ */
+static void apply_capture_controls(libcamera::Request        *req,
+                                   const capture_controls_t  *cc)
+{
+    using namespace libcamera;
+    auto &ctrls = req->controls();
+
+    /* ── Pozlama ── */
+    if (cc->exposure_us > 0) {
+        ctrls.set(controls::AeEnable,       false);
+        ctrls.set(controls::ExposureTime,   (int32_t)cc->exposure_us);
+    } else {
+        ctrls.set(controls::AeEnable,       true);
+    }
+
+    /* ── Kazanç ── */
+    if (cc->gain > 0.0f) {
+        ctrls.set(controls::AnalogueGain,   cc->gain);
+    }
+
+    /* ── Beyaz denge ── */
+    switch (cc->awb_mode) {
+    case AWB_MANUAL:
+        ctrls.set(controls::AwbEnable, false);
+        if (cc->colour_gain_r > 0.0f && cc->colour_gain_b > 0.0f) {
+            std::array<float, 2> gains = { cc->colour_gain_r,
+                                           cc->colour_gain_b };
+            ctrls.set(controls::ColourGains,
+                      Span<const float, 2>({ gains[0], gains[1] }));
+        }
+        break;
+    case AWB_INCANDESCENT:
+        ctrls.set(controls::AwbEnable, true);
+        ctrls.set(controls::AwbMode,   controls::AwbIncandescent);
+        break;
+    case AWB_TUNGSTEN:
+        ctrls.set(controls::AwbEnable, true);
+        ctrls.set(controls::AwbMode,   controls::AwbTungsten);
+        break;
+    case AWB_FLUORESCENT:
+        ctrls.set(controls::AwbEnable, true);
+        ctrls.set(controls::AwbMode,   controls::AwbFluorescent);
+        break;
+    case AWB_INDOOR:
+        ctrls.set(controls::AwbEnable, true);
+        ctrls.set(controls::AwbMode,   controls::AwbIndoor);
+        break;
+    case AWB_DAYLIGHT:
+        ctrls.set(controls::AwbEnable, true);
+        ctrls.set(controls::AwbMode,   controls::AwbDaylight);
+        break;
+    case AWB_CLOUDY:
+        ctrls.set(controls::AwbEnable, true);
+        ctrls.set(controls::AwbMode,   controls::AwbCloudy);
+        break;
+    case AWB_CUSTOM:
+        ctrls.set(controls::AwbEnable, true);
+        ctrls.set(controls::AwbMode,   controls::AwbCustom);
+        break;
+    case AWB_AUTO:
+    default:
+        ctrls.set(controls::AwbEnable, true);
+        ctrls.set(controls::AwbMode,   controls::AwbAuto);
+        break;
+    }
+
+    /* ── Görüntü kalitesi ── */
+    if (cc->brightness != -999) {
+        float bval = std::max(-1.0f,
+                     std::min( 1.0f, (float)cc->brightness / 100.0f));
+        ctrls.set(controls::Brightness, bval);
+    }
+    if (cc->contrast >= 0) {
+        float cval = std::max(0.0f,
+                     std::min(2.0f, (float)cc->contrast / 50.0f));
+        ctrls.set(controls::Contrast, cval);
+    }
+    if (cc->saturation >= 0) {
+        float sval = std::max(0.0f,
+                     std::min(2.0f, (float)cc->saturation / 50.0f));
+        ctrls.set(controls::Saturation, sval);
+    }
+    if (cc->sharpness >= 0) {
+        float shval = std::max(0.0f,
+                      std::min(2.0f, (float)cc->sharpness / 50.0f));
+        ctrls.set(controls::Sharpness, shval);
+    }
+}
 
 /* --------------------------------------------------------------------------------
  * ----- Static Function Declarations ---- *
@@ -273,7 +338,7 @@ static int libcamera_source_video_import_buffers(struct video_source *s, struct 
 static int libcamera_source_still_set_format(struct still_source *s, struct v4l2_pix_format *fmt);
 static int libcamera_source_still_alloc_buffer(struct still_source *s);
 static int libcamera_source_still_free_buffer(struct still_source *s);
-static int libcamera_source_still_capture(struct still_source *s, int64_t exposure_us, float gain);
+static int libcamera_source_still_capture(struct still_source *s, const capture_controls_t *cc);
 static int libcamera_source_still_capture_off(struct still_source *s);
 #endif
 
@@ -313,6 +378,15 @@ static void libcamera_source_video_process(libcamera_source *src)
 
 	request = src->video.completed_requests.front();
 	src->video.completed_requests.pop();
+
+	/* Read current auto-exposure/gain from frame metadata */
+	const auto &metadata = request->metadata();
+	auto expVal = metadata.get(controls::ExposureTime);
+	if (expVal)
+		src->current_exposure_us = *expVal;
+	auto gainVal = metadata.get(controls::AnalogueGain);
+	if (gainVal)
+		src->current_gain = *gainVal;
 
 	/* We have only a single buffer per request, so just pick the first */
 	FrameBuffer *framebuf = request->buffers().begin()->second;
@@ -531,6 +605,23 @@ static int libcamera_source_video_queue_buffer(struct video_source *s,
 	for (std::unique_ptr<Request> &r : src->video.requests) {
 		if (r->cookie() == buf->index) {
 			r->reuse(Request::ReuseBuffers);
+
+			/* Still capture sonrası video IPA durumunu geri yükle */
+			if (src->restore_pending_) {
+				for (auto const &[id, val] : src->restore_controls_) {
+					r->controls().set(id, val);
+				}
+				src->restore_pending_ = false;
+			}
+
+			/* Apply pending video controls from HTTP /video_controls */
+			if (src->controls_dirty_) {
+				for (auto const &[id, val] : src->controls) {
+					r->controls().set(id, val);
+				}
+				src->controls_dirty_ = false;
+			}
+
 			src->camera->queueRequest(r.get());
 
 			break;
@@ -813,23 +904,21 @@ static int libcamera_source_still_capture_off(struct still_source *s)
 	return 0;
 }
 
-static int libcamera_source_still_capture(struct still_source *s, int64_t exposure_us, float gain)
+static int libcamera_source_still_capture(struct still_source *s, const capture_controls_t *cc)
 {
 	struct libcamera_source *src = to_libcamera_source(s, still_src);
-
-	
 
 	if (!src->video.stream_on)
 		return -EBUSY;
 
-	return src->captureStill(exposure_us, gain);
+	return src->captureStill(cc);
 }
 
 static const struct still_source_ops libcamera_source_still_ops = {
 	.set_format 	= libcamera_source_still_set_format,
 	.alloc_buffer 	= libcamera_source_still_alloc_buffer,
 	.free_buffer 	= libcamera_source_still_free_buffer,
-	.capture 		= (int (*)(still_source*, int64_t, float)) libcamera_source_still_capture,
+	.capture 		= (int (*)(still_source*, const capture_controls_t*)) libcamera_source_still_capture,
 	.capture_off	= libcamera_source_still_capture_off,
 };
 
@@ -1005,4 +1094,173 @@ struct still_source *libcamera_get_still_source(struct video_source *s)
 {
 	struct libcamera_source *src = to_libcamera_source(s, video_src);
 	return &src->still_src;
+}
+
+extern "C" int libcamera_apply_video_controls(struct video_source *s,
+                                               const capture_controls_t *cc)
+{
+	using namespace libcamera;
+	struct libcamera_source *src = to_libcamera_source(s, video_src);
+
+	if (!cc) return -EINVAL;
+
+	if (cc->exposure_us > 0) {
+		src->controls.set(controls::AeEnable, false);
+		src->controls.set(controls::ExposureTime, (int32_t)cc->exposure_us);
+	} else {
+		src->controls.set(controls::AeEnable, true);
+	}
+
+	if (cc->gain > 0.0f) {
+		src->controls.set(controls::AnalogueGain, cc->gain);
+	}
+
+	switch (cc->awb_mode) {
+	case AWB_MANUAL:
+		src->controls.set(controls::AwbEnable, false);
+		if (cc->colour_gain_r > 0.0f && cc->colour_gain_b > 0.0f) {
+			std::array<float, 2> gains = { cc->colour_gain_r, cc->colour_gain_b };
+			src->controls.set(controls::ColourGains,
+			                  Span<const float, 2>({ gains[0], gains[1] }));
+		}
+		break;
+	case AWB_INCANDESCENT:
+		src->controls.set(controls::AwbEnable, true);
+		src->controls.set(controls::AwbMode, controls::AwbIncandescent);
+		break;
+	case AWB_TUNGSTEN:
+		src->controls.set(controls::AwbEnable, true);
+		src->controls.set(controls::AwbMode, controls::AwbTungsten);
+		break;
+	case AWB_FLUORESCENT:
+		src->controls.set(controls::AwbEnable, true);
+		src->controls.set(controls::AwbMode, controls::AwbFluorescent);
+		break;
+	case AWB_INDOOR:
+		src->controls.set(controls::AwbEnable, true);
+		src->controls.set(controls::AwbMode, controls::AwbIndoor);
+		break;
+	case AWB_DAYLIGHT:
+		src->controls.set(controls::AwbEnable, true);
+		src->controls.set(controls::AwbMode, controls::AwbDaylight);
+		break;
+	case AWB_CLOUDY:
+		src->controls.set(controls::AwbEnable, true);
+		src->controls.set(controls::AwbMode, controls::AwbCloudy);
+		break;
+	case AWB_CUSTOM:
+		src->controls.set(controls::AwbEnable, true);
+		src->controls.set(controls::AwbMode, controls::AwbCustom);
+		break;
+	case AWB_AUTO:
+	default:
+		src->controls.set(controls::AwbEnable, true);
+		src->controls.set(controls::AwbMode, controls::AwbAuto);
+		break;
+	}
+
+	if (cc->brightness != -999) {
+		float bval = std::max(-1.0f, std::min(1.0f, (float)cc->brightness / 100.0f));
+		src->controls.set(controls::Brightness, bval);
+	}
+	if (cc->contrast >= 0) {
+		float cval = std::max(0.0f, std::min(2.0f, (float)cc->contrast / 50.0f));
+		src->controls.set(controls::Contrast, cval);
+	}
+	if (cc->saturation >= 0) {
+		float sval = std::max(0.0f, std::min(2.0f, (float)cc->saturation / 50.0f));
+		src->controls.set(controls::Saturation, sval);
+	}
+	if (cc->sharpness >= 0) {
+		float shval = std::max(0.0f, std::min(2.0f, (float)cc->sharpness / 50.0f));
+		src->controls.set(controls::Sharpness, shval);
+	}
+
+	std::cout << "Video controls updated" << std::endl;
+	src->controls_dirty_ = true;
+	return 0;
+}
+
+extern "C" int libcamera_reset_controls(struct video_source *s)
+{
+	using namespace libcamera;
+	struct libcamera_source *src = to_libcamera_source(s, video_src);
+
+	src->controls.set(controls::AeEnable, true);
+	src->controls.set(controls::AwbEnable, true);
+	src->controls.set(controls::AwbMode, controls::AwbAuto);
+	src->controls.set(controls::Brightness, 0.0f);
+	src->controls.set(controls::Contrast, 1.0f);
+	src->controls.set(controls::Saturation, 1.0f);
+	src->controls.set(controls::Sharpness, 1.0f);
+
+	/* Restore state'ini temizle */
+	src->restore_pending_ = false;
+	src->controls_dirty_ = true;
+
+	std::cout << "Controls reset to defaults" << std::endl;
+	return 0;
+}
+
+/*
+ * libcamera_capture_jpeg()
+ *
+ * Synchronous JPEG capture from the video stream.
+ * Grabs the latest mapped video frame buffer and encodes it
+ * to JPEG using MjpegEncoder::EncodeBufferSync().
+ *
+ * The caller receives a malloc'd JPEG buffer that must be free()'d.
+ */
+extern "C" int libcamera_capture_jpeg(struct video_source *s,
+				      void **out_buf, size_t *out_size,
+				      int quality)
+{
+	struct libcamera_source *src = to_libcamera_source(s, video_src);
+
+	if (!src->video.encoder) {
+		std::cerr << "JPEG capture: no encoder available" << std::endl;
+		return -1;
+	}
+
+	if (!src->video.stream_on) {
+		std::cerr << "JPEG capture: video stream not running" << std::endl;
+		return -1;
+	}
+
+	/* Find the first mapped video buffer with data */
+	if (src->video.mapped_buffers_.empty()) {
+		std::cerr << "JPEG capture: no mapped video buffers" << std::endl;
+		return -1;
+	}
+
+	/* Use the first mapped buffer */
+	auto it = src->video.mapped_buffers_.begin();
+	void *yuv_mem = it->second.data();
+	unsigned int yuv_size = it->second.size();
+
+	/* Get stream info */
+	Stream *stream = src->config->at(0).stream();
+	StreamInfo info = src->video.encoder->getStreamInfo(stream);
+
+	std::cout << "JPEG capture: encoding " << info.width << "x" << info.height
+		  << " @ quality " << quality << std::endl;
+
+	return src->video.encoder->EncodeBufferSync(yuv_mem, yuv_size,
+						    info, quality,
+						    out_buf, out_size);
+}
+
+/*
+ * libcamera_get_camera_status()
+ *
+ * Returns current auto-computed exposure (µs) and gain values
+ * from the latest video frame metadata.
+ */
+extern "C" void libcamera_get_camera_status(struct video_source *s,
+					    int64_t *out_exposure_us,
+					    float *out_gain)
+{
+	struct libcamera_source *src = to_libcamera_source(s, video_src);
+	if (out_exposure_us) *out_exposure_us = src->current_exposure_us;
+	if (out_gain)        *out_gain = src->current_gain;
 }
