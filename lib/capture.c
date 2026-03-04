@@ -867,7 +867,7 @@ static void handle_capture(struct http_client_session *session, const char *requ
             char http_header[512];
             int len = snprintf(http_header, sizeof(http_header),
                       "HTTP/1.1 200 OK\r\n"
-                      "Content-Type: image/dng\r\n"
+                      "Content-Type: image/x-adobe-dng\r\n"
                       "Content-Disposition: attachment; filename=\"capture.dng\"\r\n"
                       "Access-Control-Allow-Origin: *\r\n"
                       "Content-Length: %u\r\n\r\n",
